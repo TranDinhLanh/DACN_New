@@ -1,0 +1,118 @@
+from pydantic import BaseModel, EmailStr, Field
+from typing import Optional, List
+from datetime import datetime, date
+from uuid import UUID
+
+# --- AUTHENTICATION SCHEMAS ---
+
+class UserBase(BaseModel):
+    email: EmailStr
+    full_name: Optional[str] = None
+
+class UserCreate(UserBase):
+    password: str = Field(..., min_length=6, description="Password must be at least 6 characters")
+
+class UserResponse(UserBase):
+    id: UUID
+    is_active: bool
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+
+class TokenData(BaseModel):
+    user_id: Optional[UUID] = None
+
+class UserRegister(UserCreate):
+    captcha_token: str
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+class ResetPasswordRequest(BaseModel):
+    email: EmailStr
+    otp: str
+    new_password: str = Field(..., min_length=6, description="New password must be at least 6 characters")
+
+class ChangePasswordRequest(BaseModel):
+    old_password: str
+    new_password: str = Field(..., min_length=6, description="New password must be at least 6 characters")
+
+
+# --- TRANSACTION SCHEMAS ---
+
+class TransactionBase(BaseModel):
+    amount: float = Field(..., gt=0, description="Amount must be positive")
+    type: str = Field("expense", description="'income' or 'expense'")
+    category: str = Field("Other", description="Spending or income category")
+    description: Optional[str] = None
+    transaction_date: date
+    merchant_name: Optional[str] = None
+
+class TransactionCreate(TransactionBase):
+    ocr_log_id: Optional[UUID] = None
+
+class TransactionUpdate(BaseModel):
+    amount: Optional[float] = Field(None, gt=0)
+    type: Optional[str] = None
+    category: Optional[str] = None
+    description: Optional[str] = None
+    transaction_date: Optional[date] = None
+    merchant_name: Optional[str] = None
+
+class TransactionResponse(TransactionBase):
+    id: UUID
+    user_id: UUID
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# --- BUDGET SCHEMAS ---
+
+class BudgetBase(BaseModel):
+    category: str
+    limit_amount: float = Field(..., gt=0)
+    period: str = Field("monthly", description="'weekly' or 'monthly'")
+
+class BudgetCreate(BudgetBase):
+    pass
+
+class BudgetResponse(BudgetBase):
+    id: UUID
+    user_id: UUID
+    spent_amount: float
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# --- OCR SCHEMAS ---
+
+class OCRResultResponse(BaseModel):
+    merchant: Optional[str] = None
+    amount: Optional[float] = None
+    category: Optional[str] = None
+    transaction_date: Optional[date] = None
+    extracted_text: str
+    ocr_log_id: UUID
+    image_url: Optional[str] = None
+    is_mock: Optional[bool] = False
+    debug_message: Optional[str] = None
+
+
+# --- FORECAST SCHEMAS ---
+
+class ForecastDataPoint(BaseModel):
+    date: date
+    predicted_amount: float
+
+class ForecastResponse(BaseModel):
+    category: str
+    forecast: List[ForecastDataPoint]

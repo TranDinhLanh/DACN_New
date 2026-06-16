@@ -1,0 +1,34 @@
+# -----------------------------------------------------------------------------
+# AuraFinance - Backend GitIgnore Configuration
+# -----------------------------------------------------------------------------
+
+# Virtual Environment
+venv/
+.venv/
+env/
+ENV/
+
+# Python caching
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+
+# Credentials / Environment Variables
+.env
+.env.local
+
+# Diagnostic & Test Scripts (Temporary)
+check_supabase.py
+test_encoded.py
+test_user_pooler.py
+test_local.py
+find_ip_region.py
+find_region.py
+alter_supabase_table.py
+
+# IDEs
+.idea/
+.vscode/

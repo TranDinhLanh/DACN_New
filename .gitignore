@@ -1,0 +1,82 @@
+# -----------------------------------------------------------------------------
+# AuraFinance - Root GitIgnore Configuration
+# -----------------------------------------------------------------------------
+
+# --- Python / Backend ---
+backend/venv/
+backend/.venv/
+**/__pycache__/
+**/*.pyc
+**/*.py[cod]
+**/*$py.class
+backend/.env
+**/check_supabase.py
+**/test_encoded.py
+**/test_user_pooler.py
+**/test_local.py
+**/find_ip_region.py
+**/find_region.py
+**/alter_supabase_table.py
+
+# --- Node.js / Frontend ---
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/build/
+frontend/.env.local
+frontend/.env.development.local
+frontend/.env.test.local
+frontend/.env.production.local
+
+# --- IDEs / Editors ---
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# --- Docker ---
+.docker-compose.local.env
+# Virtual Environment
+backend/venv/
+backend/.env
+backend/local_database.db
+backend/static/uploads/
+
+# Python Cache
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Node/Next.js
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/.env*
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+frontend/.pnpm-debug.log*
+
+# IDEs & System files
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.DS_Store
+Thumbs.db
+# Virtual Environment
+**/backend/venv/
+**/venv/
+**/backend/.env
+**/backend/local_database.db
+**/backend/static/uploads/
