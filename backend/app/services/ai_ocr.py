@@ -419,13 +419,42 @@ Lưu ý:
             if re.search(brand, text, re.IGNORECASE):
                 return brand
                 
-        # 2. Nếu không thuộc thương hiệu trên, trích xuất dòng không rỗng đầu tiên không chứa thông tin meta
+        # 2. Tiền xử lý dòng và lọc bỏ thông tin thanh status của điện thoại
         lines = [line.strip() for line in text.split('\n') if line.strip()]
-        for line in lines[:3]:
+        
+        # Thử tìm các dòng chứa từ khóa cửa hàng đặc trưng
+        for line in lines[:15]:
+            lower_line = line.lower()
+            # Lọc bỏ thanh trạng thái điện thoại trước
+            if any(k in lower_line for k in ["iill", "volte", "lte", "4g", "5g", "wifi", "%", "pin", "battery", "sóng", "mạng"]):
+                continue
+            # Lọc bỏ các đơn vị vận chuyển/giao hàng
+            if any(k in lower_line for k in ["express", "spx", "logistics", "shipping", "delivery", "giao hàng", "giao hang", "vận chuyển", "van chuyen", "ghn", "ghtk"]):
+                continue
+            # Kiểm tra từ khóa cửa hàng hoặc chữ VN độc lập (tránh chữ VN dính trong mã vận đơn như SPXVN...)
+            has_keyword = any(k in lower_line for k in ["coffee", "tea", "mart", "shop", "cửa hàng", "quán", "store", "restaurant"]) or re.search(r'\bvn\b', lower_line)
+            if has_keyword:
+                if not any(k in lower_line for k in ["dia chi", "address", "sdt", "tel", "http", "www"]):
+                    cleaned_merchant = re.sub(r'[>\-\+\=\*]+$', '', line).strip()
+                    if len(cleaned_merchant) > 2:
+                        return cleaned_merchant
+                        
+        # 3. Nếu không tìm thấy bằng từ khóa, trích xuất dòng không rỗng đầu tiên không chứa thông tin meta
+        for line in lines[:6]:
             lower_line = line.lower()
             if any(k in lower_line for k in [
+                "iill", "volte", "lte", "4g", "5g", "wifi", "%", "pin", "battery", "sóng", "mạng"
+            ]) and (any(c.isdigit() for c in line) or "@" in line):
+                continue
+            # Lọc bỏ các đơn vị vận chuyển/giao hàng
+            if any(k in lower_line for k in ["express", "spx", "logistics", "shipping", "delivery", "giao hàng", "giao hang", "vận chuyển", "van chuyen", "ghn", "ghtk"]):
+                continue
+            if re.match(r'^\d{1,2}:\d{2}$', line):
+                continue
+            if any(k in lower_line for k in [
                 "dia chi", "địa chỉ", "address", "sdt", "sđt", "tel", "phone", "ngay", "ngày", 
-                "date", "http", "www", "---", "===", "hoa don", "hoá đơn", "bill", "thanh toan"
+                "date", "http", "www", "---", "===", "hoa don", "hoá đơn", "bill", "thanh toan",
+                "thông tin", "thong tin", "don hang", "đơn hàng"
             ]):
                 continue
             # Bỏ qua nếu dòng chứa quá nhiều chữ số (có thể là mã số thuế, số điện thoại...)
@@ -433,7 +462,9 @@ Lưu ý:
             if digits > len(line) * 0.5:
                 continue
             if len(line) > 2:
-                return line
+                cleaned_merchant = re.sub(r'[>\-\+\=\*]+$', '', line).strip()
+                if cleaned_merchant:
+                    return cleaned_merchant
                 
         return "Unknown Store"
 
@@ -518,7 +549,10 @@ Lưu ý:
         
         # Exclude common non-total words containing "Cộng" or "Cong"
         if kw_clean == "CONG" or kw_upper == "CỘNG":
-            exclusions = ["CONG TY", "CÔNG TY", "CONG HOA", "CỘNG HÒA", "CONG NGHE", "CÔNG NGHỆ", "CONG DONG", "CỘNG ĐỒNG"]
+            exclusions = [
+                "CONG TY", "CÔNG TY", "CONG HOA", "CỘNG HÒA", "CONG NGHE", "CÔNG NGHỆ", 
+                "CONG DONG", "CỘNG ĐỒNG", "THANH CONG", "THÀNH CÔNG"
+            ]
             temp_upper = line_upper
             temp_clean = line_clean
             for excl in exclusions:
@@ -606,6 +640,30 @@ Lưu ý:
 
     @staticmethod
     def _extract_date(text: str) -> Optional[datetime.date]:
+        # 1. Tìm ngày có đi kèm thời gian (Ví dụ: DD-MM-YYYY HH:MM)
+        datetime_pattern = r'\b(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})\s+\d{1,2}:\d{2}\b'
+        match = re.search(datetime_pattern, text)
+        if match:
+            day, month, year = match.groups()
+            try:
+                return datetime(int(year), int(month), int(day)).date()
+            except ValueError:
+                pass
+                
+        # 2. Tìm ngày nằm cùng dòng với các từ khóa về thời gian mua/giao dịch
+        lines = text.split('\n')
+        for line in lines:
+            if any(k in line.lower() for k in ["ngày", "ngay", "thời gian", "thoi gian", "date", "time"]):
+                date_pattern = r'\b(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})\b'
+                match = re.search(date_pattern, line)
+                if match:
+                    day, month, year = match.groups()
+                    try:
+                        return datetime(int(year), int(month), int(day)).date()
+                    except ValueError:
+                        pass
+                        
+        # 3. Fallback: Lấy ngày đầu tiên xuất hiện trong văn bản
         date_pattern = r'\b(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})\b'
         match = re.search(date_pattern, text)
         if match:

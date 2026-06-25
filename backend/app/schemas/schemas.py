@@ -116,3 +116,18 @@ class ForecastDataPoint(BaseModel):
 class ForecastResponse(BaseModel):
     category: str
     forecast: List[ForecastDataPoint]
+
+
+# --- CHAT SCHEMAS ---
+
+class ChatMessage(BaseModel):
+    role: str  # 'user' or 'model' / 'assistant'
+    content: str
+
+class ChatRequest(BaseModel):
+    message: str
+    history: Optional[List[ChatMessage]] = None
+
+class ChatResponse(BaseModel):
+    response: str
+    suggested_questions: Optional[List[str]] = None

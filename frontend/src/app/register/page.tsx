@@ -110,7 +110,7 @@ export default function RegisterPage() {
     setLoading(true);
 
     try {
-      await api.register(email, password, fullName, captchaToken);
+      await api.register(email, password, fullName, captchaToken || "");
       setSuccess(true);
       setTimeout(() => {
         router.push("/login");

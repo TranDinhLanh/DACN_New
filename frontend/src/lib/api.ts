@@ -114,4 +114,86 @@ export const api = {
       localStorage.removeItem("auth_token");
     }
   },
+
+  // --- TRANSACTIONS API ---
+  getTransactions() {
+    return fetchAPI("/transactions/", {
+      method: "GET",
+      requiresAuth: true,
+    });
+  },
+
+  createTransaction(txData: {
+    amount: number;
+    type: string;
+    category: string;
+    description: string;
+    transaction_date: string;
+    merchant_name?: string;
+    ocr_log_id?: string;
+  }) {
+    return fetchAPI("/transactions/", {
+      method: "POST",
+      body: JSON.stringify(txData),
+      requiresAuth: true,
+    });
+  },
+
+  deleteTransaction(txId: string) {
+    return fetchAPI(`/transactions/${txId}`, {
+      method: "DELETE",
+      requiresAuth: true,
+    });
+  },
+
+  updateTransaction(txId: string, txData: {
+    amount: number;
+    type: string;
+    category: string;
+    description: string;
+    transaction_date: string;
+    merchant_name?: string;
+  }) {
+    return fetchAPI(`/transactions/${txId}`, {
+      method: "PUT",
+      body: JSON.stringify(txData),
+      requiresAuth: true,
+    });
+  },
+
+  // --- BUDGETS API ---
+  getBudgets() {
+    return fetchAPI("/budgets/", {
+      method: "GET",
+      requiresAuth: true,
+    });
+  },
+
+  createOrUpdateBudget(budgetData: {
+    category: string;
+    limit_amount: number;
+    period: string;
+  }) {
+    return fetchAPI("/budgets/", {
+      method: "POST",
+      body: JSON.stringify(budgetData),
+      requiresAuth: true,
+    });
+  },
+
+  deleteBudget(budgetId: string) {
+    return fetchAPI(`/budgets/${budgetId}`, {
+      method: "DELETE",
+      requiresAuth: true,
+    });
+  },
+
+  // --- AI CHAT API ---
+  chatWithAI(message: string, history: { role: string; content: string }[]) {
+    return fetchAPI("/chat/", {
+      method: "POST",
+      body: JSON.stringify({ message, history }),
+      requiresAuth: true,
+    });
+  },
 };

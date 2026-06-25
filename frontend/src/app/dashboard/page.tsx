@@ -9,6 +9,7 @@ import {
   FileText,
   Plus,
   Trash2,
+  Edit,
   AlertTriangle,
   UploadCloud,
   Check,
@@ -81,9 +82,35 @@ const COLORS = ["#6366f1", "#10b981", "#ef4444", "#f59e0b", "#06b6d4", "#a855f7"
 export default function Dashboard() {
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
+  
+  // Helper to format raw number strings to Vietnamese format (e.g., 15000000 -> 15.000.000)
+  const formatVNDString = (valStr: string | number) => {
+    if (valStr === undefined || valStr === null || valStr === "") return "";
+    const clean = valStr.toString().replace(/\D/g, "");
+    if (!clean) return "";
+    return Number(clean).toLocaleString("vi-VN");
+  };
+
+  // Helper to clean formatted VND strings back to raw number
+  const cleanVNDString = (valStr: string) => {
+    if (!valStr) return "";
+    return valStr.replace(/\D/g, "");
+  };
+
   const [user, setUser] = useState<{ email: string; full_name?: string } | null>(null);
-  const [transactions, setTransactions] = useState<Transaction[]>(INITIAL_TRANSACTIONS);
-  const [budgets, setBudgets] = useState<Budget[]>(INITIAL_BUDGETS);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [budgets, setBudgets] = useState<Budget[]>([]);
+  
+  // Jars Budget Allocator states
+  const [monthlyIncome, setMonthlyIncome] = useState<number>(10000000);
+  const [jarPercentages, setJarPercentages] = useState<{ [key: string]: number }>({
+    "Food & Beverage": 35,
+    "Transportation": 15,
+    "Shopping": 15,
+    "Bills & Utilities": 15,
+    "Entertainment": 10,
+    "Other": 10
+  });
   
   // Tab/Screen navigation State (added security tab)
   const [activeTab, setActiveTab] = useState<"overview" | "add" | "ocr" | "budgets" | "security">("overview");
@@ -115,6 +142,22 @@ export default function Dashboard() {
   const [securitySuccess, setSecuritySuccess] = useState<string | null>(null);
   const [securityLoading, setSecurityLoading] = useState(false);
 
+  // Chatbox UI States
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [chatMessages, setChatMessages] = useState<{ role: string; content: string }[]>([
+    {
+      role: "assistant",
+      content: "Chào bạn! Tôi là **AuraAI**, trợ lý tài chính cá nhân của bạn. Tôi có thể giúp bạn kiểm tra ngân sách, xem chi tiêu và đưa ra các lời khuyên hữu ích. Bạn có câu hỏi nào cho tôi không?"
+    }
+  ]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatLoading, setChatLoading] = useState(false);
+  const [chatSuggestions, setChatSuggestions] = useState<string[]>([
+    "Ngân sách tháng này thế nào?",
+    "Tôi đã chi tiêu bao nhiêu?",
+    "Số dư tài khoản hiện tại?"
+  ]);
+
   // Auth and hydration verification shield
   useEffect(() => {
     setMounted(true);
@@ -130,6 +173,36 @@ export default function Dashboard() {
     api.getMe()
       .then(userData => {
         setUser(userData);
+        
+        // Fetch transactions from API
+        api.getTransactions()
+          .then(data => {
+            setTransactions(data || []);
+          })
+          .catch(err => console.error("Failed to load transactions:", err));
+
+        // Fetch budgets from API
+        api.getBudgets()
+          .then(data => {
+            setBudgets(data || []);
+            if (data && data.length > 0) {
+              const totalLimit = data.reduce((sum, b) => sum + b.limit_amount, 0);
+              if (totalLimit > 0) {
+                setMonthlyIncome(totalLimit);
+                // Also update jar percentages based on the loaded limits!
+                setJarPercentages(prev => {
+                  const updated = { ...prev };
+                  data.forEach(b => {
+                    if (b.category in updated) {
+                      updated[b.category] = Math.round((b.limit_amount / totalLimit) * 100);
+                    }
+                  });
+                  return updated;
+                });
+              }
+            }
+          })
+          .catch(err => console.error("Failed to load budgets:", err));
       })
       .catch(err => {
         console.error("Auth verification failed:", err);
@@ -172,38 +245,54 @@ export default function Dashboard() {
     .filter(t => t.type === "expense")
     .reduce((sum, t) => sum + t.amount, 0);
 
-  const netBalance = totalIncome - totalExpense;
+  const displayIncome = totalIncome > 0 ? totalIncome : monthlyIncome;
+  const netBalance = displayIncome - totalExpense;
 
   // Add manually input transaction
   const handleSaveTransaction = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!amount || isNaN(Number(amount))) return;
+    const rawAmount = Number(cleanVNDString(amount));
+    if (!rawAmount || isNaN(rawAmount)) return;
 
     // Use AI suggested category if the selected one is Other
     const finalCategory = (category === "Other" && aiSuggestion) ? aiSuggestion : category;
 
-    const newTx: Transaction = {
-      id: Date.now().toString(),
-      amount: Number(amount),
+    // Save transaction to backend
+    api.createTransaction({
+      amount: rawAmount,
       type,
       category: finalCategory,
       description: description || "Giao dịch không mô tả",
       transaction_date: transactionDate,
       merchant_name: merchant || undefined
-    };
+    })
+      .then(savedTx => {
+        setTransactions(prev => [savedTx, ...prev]);
 
-    const updatedTxs = [newTx, ...transactions];
-    setTransactions(updatedTxs);
-
-    // Dynamic spent budget updating on the fly!
-    if (type === "expense") {
-      setBudgets(prev => prev.map(b => {
-        if (b.category === finalCategory) {
-          return { ...b, spent_amount: b.spent_amount + Number(amount) };
+        // Dynamic spent budget updating on the fly!
+        if (type === "expense") {
+          setBudgets(prev => prev.map(b => {
+            if (b.category === finalCategory) {
+              return { ...b, spent_amount: b.spent_amount + rawAmount };
+            }
+            return b;
+          }));
         }
-        return b;
-      }));
-    }
+      })
+      .catch(err => {
+        console.error("Failed to save transaction to database:", err);
+        // Fallback local update if backend is unreachable
+        const newTx: Transaction = {
+          id: Date.now().toString(),
+          amount: rawAmount,
+          type,
+          category: finalCategory,
+          description: description || "Giao dịch không mô tả",
+          transaction_date: transactionDate,
+          merchant_name: merchant || undefined
+        };
+        setTransactions(prev => [newTx, ...prev]);
+      });
 
     // Reset Form
     setAmount("");
@@ -252,7 +341,7 @@ export default function Dashboard() {
       
       // Auto pre-populate transaction forms with live LayoutLMv3 results
       setMerchant(parsedData.merchant || "Cửa hàng không rõ");
-      setAmount(parsedData.amount ? parsedData.amount.toString() : "0");
+      setAmount(parsedData.amount ? formatVNDString(parsedData.amount.toString()) : "0");
       setCategory(parsedData.category || "Other");
       setDescription(`Quét hóa đơn ${parsedData.merchant || ""}`);
       setTransactionDate(parsedData.transaction_date || new Date().toISOString().split("T")[0]);
@@ -269,17 +358,93 @@ export default function Dashboard() {
     const txToDelete = transactions.find(t => t.id === id);
     if (!txToDelete) return;
 
-    setTransactions(transactions.filter(t => t.id !== id));
+    api.deleteTransaction(id)
+      .then(() => {
+        setTransactions(transactions.filter(t => t.id !== id));
 
-    // Reverse budget values
-    if (txToDelete.type === "expense") {
-      setBudgets(prev => prev.map(b => {
-        if (b.category === txToDelete.category) {
-          return { ...b, spent_amount: Math.max(0, b.spent_amount - txToDelete.amount) };
+        // Reverse budget values
+        if (txToDelete.type === "expense") {
+          setBudgets(prev => prev.map(b => {
+            if (b.category === txToDelete.category) {
+              return { ...b, spent_amount: Math.max(0, b.spent_amount - txToDelete.amount) };
+            }
+            return b;
+          }));
         }
-        return b;
-      }));
-    }
+      })
+      .catch(err => {
+        console.error("Failed to delete transaction from database:", err);
+        // Local only fallback
+        setTransactions(transactions.filter(t => t.id !== id));
+      });
+  };
+
+  // State variables for editing a transaction
+  const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
+  const [editAmount, setEditAmount] = useState("");
+  const [editType, setEditType] = useState<"income" | "expense">("expense");
+  const [editCategory, setEditCategory] = useState("Other");
+  const [editDescription, setEditDescription] = useState("");
+  const [editMerchant, setEditMerchant] = useState("");
+  const [editTransactionDate, setEditTransactionDate] = useState("");
+
+  const handleStartEdit = (tx: Transaction) => {
+    setEditingTransaction(tx);
+    setEditAmount(formatVNDString(tx.amount.toString()));
+    setEditType(tx.type);
+    setEditCategory(tx.category);
+    setEditDescription(tx.description);
+    setEditMerchant(tx.merchant_name || "");
+    setEditTransactionDate(tx.transaction_date);
+  };
+
+  const handleSaveEdit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingTransaction) return;
+    const oldTx = editingTransaction;
+    const newAmount = Number(cleanVNDString(editAmount));
+    
+    const updatePayload = {
+      amount: newAmount,
+      type: editType,
+      category: editCategory,
+      description: editDescription,
+      transaction_date: editTransactionDate,
+      merchant_name: editMerchant || undefined
+    };
+
+    api.updateTransaction(oldTx.id, updatePayload)
+      .then(updatedTx => {
+        setTransactions(prev => prev.map(t => t.id === oldTx.id ? updatedTx : t));
+
+        // Recalculate budgets on the fly
+        setBudgets(prev => prev.map(b => {
+          let spent = b.spent_amount;
+          if (oldTx.type === "expense" && b.category === oldTx.category) {
+            spent = Math.max(0, spent - oldTx.amount);
+          }
+          if (editType === "expense" && b.category === editCategory) {
+            spent = spent + newAmount;
+          }
+          return { ...b, spent_amount: spent };
+        }));
+
+        setEditingTransaction(null);
+      })
+      .catch(err => {
+        console.error("Failed to update transaction:", err);
+        const updatedLocalTx: Transaction = {
+          ...oldTx,
+          amount: newAmount,
+          type: editType,
+          category: editCategory,
+          description: editDescription,
+          transaction_date: editTransactionDate,
+          merchant_name: editMerchant || undefined
+        };
+        setTransactions(prev => prev.map(t => t.id === oldTx.id ? updatedLocalTx : t));
+        setEditingTransaction(null);
+      });
   };
 
   // Pre-aggregate category spending data for Recharts Pie Chart
@@ -317,6 +482,115 @@ export default function Dashboard() {
       });
     }
     return forecast;
+  };
+
+  // Chatbox Send handler
+  const handleSendChatMessage = async (textToSend?: string) => {
+    const text = textToSend || chatInput;
+    if (!text.trim()) return;
+
+    if (!textToSend) {
+      setChatInput("");
+    }
+
+    // Add user message to log
+    const updatedMessages = [...chatMessages, { role: "user", content: text }];
+    setChatMessages(updatedMessages);
+    setChatLoading(true);
+
+    try {
+      // Map roles for backend chat API
+      const historyToSend = chatMessages.map(msg => ({
+        role: msg.role === "assistant" ? "model" : "user",
+        content: msg.content
+      }));
+
+      const data = await api.chatWithAI(text, historyToSend);
+      
+      setChatMessages(prev => [...prev, { role: "assistant", content: data.response }]);
+      if (data.suggested_questions) {
+        setChatSuggestions(data.suggested_questions);
+      }
+    } catch (err: any) {
+      console.error("Chat error:", err);
+      setChatMessages(prev => [...prev, { 
+        role: "assistant", 
+        content: `⚠️ Đã xảy ra lỗi kết nối với trợ lý AI: ${err.message || "Vui lòng thử lại sau."}` 
+      }]);
+    } finally {
+      setChatLoading(false);
+    }
+  };
+
+  // Simple Markdown & Table parser for chat bubbles
+  const renderMessageContent = (content: string) => {
+    if (content.includes("|")) {
+      const lines = content.split("\n");
+      const beforeParts: string[] = [];
+      const afterParts: string[] = [];
+      const tableRows: string[][] = [];
+      let tableStarted = false;
+      
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (line.startsWith("|")) {
+          tableStarted = true;
+          if (line.includes("---") || line.includes(":-")) continue;
+          
+          const cells = line.split("|").map(c => c.trim()).filter((c, idx, arr) => idx > 0 && idx < arr.length - 1);
+          if (cells.length > 0) {
+            tableRows.push(cells);
+          }
+        } else {
+          if (!tableStarted) {
+            beforeParts.push(lines[i]);
+          } else {
+            afterParts.push(lines[i]);
+          }
+        }
+      }
+      
+      if (tableRows.length > 0) {
+        return (
+          <div className="space-y-2">
+            {beforeParts.join("\n") && <div className="whitespace-pre-line">{parseBoldText(beforeParts.join("\n"))}</div>}
+            <div className="overflow-x-auto my-2 border border-white/10 rounded-lg">
+              <table className="w-full text-[10px] text-left border-collapse border-spacing-0">
+                <thead>
+                  <tr className="bg-slate-800 border-b border-white/10 text-slate-300">
+                    {tableRows[0].map((cell, idx) => (
+                      <th key={idx} className="p-2 font-bold">{cell}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {tableRows.slice(1).map((row, rowIdx) => (
+                    <tr key={rowIdx} className="hover:bg-white/[0.02]">
+                      {row.map((cell, cellIdx) => (
+                        <td key={cellIdx} className="p-2 text-slate-400">{cell}</td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {afterParts.join("\n") && <div className="whitespace-pre-line">{parseBoldText(afterParts.join("\n"))}</div>}
+          </div>
+        );
+      }
+    }
+    
+    return <span className="whitespace-pre-line">{parseBoldText(content)}</span>;
+  };
+
+  const parseBoldText = (text: string) => {
+    const parts = text.split(/(\*\*.*?\*\*)/g);
+    return parts.map((part, index) => {
+      if (part.startsWith("**") && part.endsWith("**")) {
+        return <strong key={index} className="text-white font-bold">{part.slice(2, -2)}</strong>;
+      }
+      return part;
+    });
   };
 
   if (!mounted) {
@@ -488,7 +762,7 @@ export default function Dashboard() {
                 </div>
                 <span className="text-xs text-slate-400 block font-medium">Tổng Thu Nhập Tháng Này</span>
                 <span className="text-2xl font-extrabold text-emerald-400 block mt-2 tracking-tight">
-                  +{totalIncome.toLocaleString()}đ
+                  +{displayIncome.toLocaleString()}đ
                 </span>
                 <span className="text-[10px] text-emerald-500/80 block mt-1.5 font-semibold">
                   Tăng trưởng ổn định
@@ -516,32 +790,38 @@ export default function Dashboard() {
                 <AlertTriangle className="h-4.5 w-4.5 text-amber-500" /> Cảnh Báo Ngưỡng Hạn Mức Ngân Sách Tháng 5
               </h3>
               <div className="space-y-4">
-                {budgets.map((b, i) => {
-                  const percent = Math.min(100, Math.round((b.spent_amount / b.limit_amount) * 100));
-                  let colorClass = "bg-emerald-500";
-                  let textClass = "text-emerald-400";
-                  if (percent >= 90) {
-                    colorClass = "bg-rose-500 animate-pulse";
-                    textClass = "text-rose-400 font-bold";
-                  } else if (percent >= 75) {
-                    colorClass = "bg-amber-500";
-                    textClass = "text-amber-400";
-                  }
-                  
-                  return (
-                    <div key={i} className="space-y-1.5">
-                      <div className="flex items-center justify-between text-xs font-semibold">
-                        <span className="text-slate-300">{b.category}</span>
-                        <span className="text-slate-400">
-                          Đã chi <span className={textClass}>{b.spent_amount.toLocaleString()}đ</span> / {b.limit_amount.toLocaleString()}đ ({percent}%)
-                        </span>
+                {budgets.length > 0 ? (
+                  budgets.map((b, i) => {
+                    const percent = b.limit_amount > 0 ? Math.min(100, Math.round((b.spent_amount / b.limit_amount) * 100)) : 0;
+                    let colorClass = "bg-emerald-500";
+                    let textClass = "text-emerald-400";
+                    if (percent >= 90) {
+                      colorClass = "bg-rose-500 animate-pulse";
+                      textClass = "text-rose-400 font-bold";
+                    } else if (percent >= 75) {
+                      colorClass = "bg-amber-500";
+                      textClass = "text-amber-400";
+                    }
+                    
+                    return (
+                      <div key={i} className="space-y-1.5">
+                        <div className="flex items-center justify-between text-xs font-semibold">
+                          <span className="text-slate-300">{b.category}</span>
+                          <span className="text-slate-400">
+                            Đã chi <span className={textClass}>{b.spent_amount.toLocaleString()}đ</span> / {b.limit_amount.toLocaleString()}đ ({percent}%)
+                          </span>
+                        </div>
+                        <div className="h-2 w-full bg-slate-900 rounded-full overflow-hidden border border-white/5">
+                          <div className={`h-full rounded-full ${colorClass}`} style={{ width: `${percent}%` }} />
+                        </div>
                       </div>
-                      <div className="h-2 w-full bg-slate-900 rounded-full overflow-hidden border border-white/5">
-                        <div className={`h-full rounded-full ${colorClass}`} style={{ width: `${percent}%` }} />
-                      </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })
+                ) : (
+                  <div className="text-center py-6 text-xs text-slate-500">
+                    Bạn chưa thiết lập hũ chi tiêu nào. Hãy vào tab <button onClick={() => setActiveTab("budgets")} className="text-indigo-400 hover:underline font-bold">Hạn mức ngân sách</button> để phân chia hũ tài chính ngay!
+                  </div>
+                )}
               </div>
             </div>
 
@@ -616,7 +896,7 @@ export default function Dashboard() {
                       </defs>
                       <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.02)" />
                       <XAxis dataKey="date" stroke="rgba(255,255,255,0.2)" fontSize={9} />
-                      <YAxis stroke="rgba(255,255,255,0.2)" fontSize={9} width={45} formatter={(val) => `${val/1000}K`} />
+                      <YAxis stroke="rgba(255,255,255,0.2)" fontSize={9} width={45} tickFormatter={(val: number) => `${val/1000}K`} />
                       <Tooltip 
                         contentStyle={{ backgroundColor: "rgba(15, 23, 42, 0.95)", borderColor: "rgba(255,255,255,0.08)", color: "#fff", fontSize: "11px", borderRadius: "10px" }}
                         formatter={(val: any) => [`${val.toLocaleString()} VND`, "Dự đoán"]}
@@ -673,8 +953,11 @@ export default function Dashboard() {
                         <td className={`py-4 text-right font-extrabold ${tx.type === 'income' ? 'text-emerald-400' : 'text-rose-400'}`}>
                           {tx.type === 'income' ? '+' : '-'}{tx.amount.toLocaleString()}đ
                         </td>
-                        <td className="py-4 text-center">
-                          <button onClick={() => handleDeleteTransaction(tx.id)} className="text-slate-500 hover:text-rose-500 p-1.5 rounded-lg hover:bg-rose-500/10 transition-all">
+                        <td className="py-4 text-center flex items-center justify-center gap-1">
+                          <button onClick={() => handleStartEdit(tx)} className="text-slate-500 hover:text-indigo-400 p-1.5 rounded-lg hover:bg-indigo-500/10 transition-all" title="Chỉnh sửa">
+                            <Edit className="h-4 w-4" />
+                          </button>
+                          <button onClick={() => handleDeleteTransaction(tx.id)} className="text-slate-500 hover:text-rose-500 p-1.5 rounded-lg hover:bg-rose-500/10 transition-all" title="Xóa">
                             <Trash2 className="h-4 w-4" />
                           </button>
                         </td>
@@ -731,10 +1014,10 @@ export default function Dashboard() {
               <div>
                 <label className="text-xs text-slate-400 font-semibold block mb-2">Số tiền giao dịch (VND)</label>
                 <input 
-                  type="number"
-                  placeholder="Ví dụ: 85000"
+                  type="text"
+                  placeholder="Ví dụ: 85.000"
                   value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
+                  onChange={(e) => setAmount(formatVNDString(e.target.value))}
                   className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500 text-white font-extrabold"
                   required
                 />
@@ -956,29 +1239,44 @@ export default function Dashboard() {
                   <form 
                     onSubmit={(e) => {
                       e.preventDefault();
-                      if (!amount || isNaN(Number(amount))) return;
+                      const rawAmount = Number(cleanVNDString(amount));
+                      if (!rawAmount || isNaN(rawAmount)) return;
 
-                      // Create transaction
-                      const newTx: Transaction = {
-                        id: Date.now().toString(),
-                        amount: Number(amount),
+                      // Save OCR transaction to backend
+                      api.createTransaction({
+                        amount: rawAmount,
                         type: "expense",
                         category: category,
                         description: description || `Quét hóa đơn ${merchant}`,
                         transaction_date: transactionDate,
-                        merchant_name: merchant || undefined
-                      };
+                        merchant_name: merchant || undefined,
+                        ocr_log_id: ocrExtractedData?.ocr_log_id
+                      })
+                        .then(savedTx => {
+                          setTransactions(prev => [savedTx, ...prev]);
 
-                      // Append to local transactions list
-                      setTransactions([newTx, ...transactions]);
-
-                      // Update budget limits on the fly!
-                      setBudgets(prev => prev.map(b => {
-                        if (b.category === category) {
-                          return { ...b, spent_amount: b.spent_amount + Number(amount) };
-                        }
-                        return b;
-                      }));
+                          // Update budget limits on the fly!
+                          setBudgets(prev => prev.map(b => {
+                            if (b.category === category) {
+                              return { ...b, spent_amount: b.spent_amount + rawAmount };
+                            }
+                            return b;
+                          }));
+                        })
+                        .catch(err => {
+                          console.error("Failed to save OCR transaction:", err);
+                          // Local only fallback
+                          const newTx: Transaction = {
+                            id: Date.now().toString(),
+                            amount: rawAmount,
+                            type: "expense",
+                            category: category,
+                            description: description || `Quét hóa đơn ${merchant}`,
+                            transaction_date: transactionDate,
+                            merchant_name: merchant || undefined
+                          };
+                          setTransactions(prev => [newTx, ...prev]);
+                        });
 
                       // Reset scanner states
                       setOcrSuccess(false);
@@ -1009,11 +1307,11 @@ export default function Dashboard() {
                     <div>
                       <label className="text-slate-400 block mb-1.5 font-bold">Tổng số tiền giao dịch (VND)</label>
                       <input 
-                        type="number"
+                        type="text"
                         value={amount}
-                        onChange={(e) => setAmount(e.target.value)}
+                        onChange={(e) => setAmount(formatVNDString(e.target.value))}
                         className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3 font-extrabold text-emerald-400 focus:outline-none focus:border-indigo-500 text-sm"
-                        placeholder="Ví dụ: 85000"
+                        placeholder="Ví dụ: 85.000"
                         required
                       />
                     </div>
@@ -1103,88 +1401,245 @@ export default function Dashboard() {
         )}
 
         {/* TAB 4: BUDGET MANAGEMENT */}
-        {activeTab === "budgets" && (
-          <div className="max-w-3xl mx-auto space-y-6">
-            <div>
-              <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                <AlertTriangle className="h-5 w-5 text-indigo-400" /> Quản Lý Hạn Mức Ngân Sách
-              </h2>
-              <p className="text-slate-400 text-xs mt-1">Điều chỉnh giới hạn chi tiêu tối đa mỗi tháng của từng danh mục để nhận thông báo cảnh báo sớm khi vượt ngưỡng.</p>
-            </div>
+        {activeTab === "budgets" && (() => {
+          const totalPercent = Object.values(jarPercentages).reduce((a, b) => a + b, 0);
+          
+          const applyPreset503020 = () => {
+            setJarPercentages({
+              "Food & Beverage": 30,
+              "Transportation": 10,
+              "Shopping": 15,
+              "Bills & Utilities": 10,
+              "Entertainment": 15,
+              "Other": 20
+            });
+          };
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Form to update a budget limit */}
-              <div className="glass-card rounded-2xl p-6 border border-white/5 space-y-5">
-                <h3 className="text-sm font-bold text-slate-300">Thiết Lập Hạn Mức Chi Tiêu</h3>
-                
-                <div className="space-y-4">
+          const applyPreset6Jars = () => {
+            setJarPercentages({
+              "Food & Beverage": 35,
+              "Transportation": 10,
+              "Shopping": 15,
+              "Bills & Utilities": 10,
+              "Entertainment": 15,
+              "Other": 15
+            });
+          };
+
+          const handlePercentageChange = (cat: string, val: number) => {
+            setJarPercentages(prev => {
+              const updated = { ...prev, [cat]: val };
+              return updated;
+            });
+          };
+
+          const handleSaveJars = () => {
+            if (totalPercent !== 100) return;
+            
+            const promises = Object.entries(jarPercentages).map(([cat, pct]) => {
+              const limit = Math.round((pct / 100) * monthlyIncome);
+              return api.createOrUpdateBudget({
+                category: cat,
+                limit_amount: limit,
+                period: "monthly"
+              });
+            });
+
+            Promise.all(promises)
+              .then(() => {
+                setBudgets(prev => {
+                  return Object.entries(jarPercentages).map(([cat, pct]) => {
+                    const limit = Math.round((pct / 100) * monthlyIncome);
+                    const existing = prev.find(b => b.category === cat);
+                    return {
+                      category: cat,
+                      limit_amount: limit,
+                      spent_amount: existing ? existing.spent_amount : 0
+                    };
+                  });
+                });
+                alert("Phân chia hũ ngân sách thành công!");
+              })
+              .catch(err => {
+                console.error("Failed to save all budget jars:", err);
+                // Fallback local update
+                setBudgets(prev => {
+                  return Object.entries(jarPercentages).map(([cat, pct]) => {
+                    const limit = Math.round((pct / 100) * monthlyIncome);
+                    const existing = prev.find(b => b.category === cat);
+                    return {
+                      category: cat,
+                      limit_amount: limit,
+                      spent_amount: existing ? existing.spent_amount : 0
+                    };
+                  });
+                });
+              });
+          };
+
+          return (
+            <div className="max-w-6xl mx-auto space-y-6">
+              <div>
+                <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                  <Wallet className="h-5 w-5 text-indigo-400" /> Quản Lý Hũ Chi Tiêu (Timo & MoMo Jars)
+                </h2>
+                <p className="text-slate-400 text-xs mt-1">Thiết lập tổng thu nhập hàng tháng và phân bổ tiền vào các hũ tài chính để kiểm soát chi tiêu tối ưu.</p>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+                {/* LEFT PANEL: INCOME & ALLOCATOR SLIDERS */}
+                <div className="lg:col-span-6 glass-card rounded-2xl p-6 border border-white/5 space-y-6">
                   <div>
-                    <label className="text-xs text-slate-400 block mb-1.5 font-semibold">Chọn danh mục</label>
-                    <select id="budget_category" className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3 text-xs text-white">
-                      <option value="Food & Beverage">Food & Beverage (Ăn uống)</option>
-                      <option value="Transportation">Transportation (Di chuyển)</option>
-                      <option value="Shopping">Shopping (Mua sắm)</option>
-                      <option value="Bills & Utilities">Bills & Utilities (Hóa đơn)</option>
-                      <option value="Entertainment">Entertainment (Giải trí)</option>
-                    </select>
+                    <h3 className="text-sm font-bold text-slate-300">1. Nhập Tổng Thu Nhập / Lương</h3>
+                    <p className="text-[10px] text-slate-500 mt-0.5">Số tiền nền tảng để chia tỷ lệ phần trăm các hũ</p>
+                    <div className="mt-3 relative">
+                      <input 
+                        type="text" 
+                        value={formatVNDString(monthlyIncome)} 
+                        onChange={(e) => setMonthlyIncome(Number(cleanVNDString(e.target.value)) || 0)}
+                        className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3 text-sm text-emerald-400 font-extrabold focus:outline-none focus:border-indigo-500"
+                        placeholder="Ví dụ: 15.000.000"
+                      />
+                      <span className="absolute right-4 top-3 text-xs text-slate-500 font-bold">VND</span>
+                    </div>
                   </div>
 
-                  <div>
-                    <label className="text-xs text-slate-400 block mb-1.5 font-semibold">Giới hạn hàng tháng (VND)</label>
-                    <input id="budget_limit" type="number" placeholder="Ví dụ: 3000000" className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3 text-xs text-white font-bold" />
+                  {/* PRESETS */}
+                  <div className="space-y-2">
+                    <label className="text-[11px] text-slate-400 font-bold block">2. Chọn quy tắc chia hũ nhanh</label>
+                    <div className="grid grid-cols-2 gap-3">
+                      <button 
+                        onClick={applyPreset503020}
+                        className="py-2.5 rounded-xl bg-slate-900 border border-white/5 hover:border-indigo-500/30 text-[10px] text-slate-300 font-bold transition-all hover:bg-slate-950"
+                      >
+                        Quy tắc 50 / 30 / 20
+                      </button>
+                      <button 
+                        onClick={applyPreset6Jars}
+                        className="py-2.5 rounded-xl bg-slate-900 border border-white/5 hover:border-indigo-500/30 text-[10px] text-slate-300 font-bold transition-all hover:bg-slate-950"
+                      >
+                        Quy tắc 6 Hũ Tài Chính
+                      </button>
+                    </div>
                   </div>
 
+                  {/* SLIDERS LIST */}
+                  <div className="space-y-4">
+                    <div className="flex justify-between items-center">
+                      <label className="text-[11px] text-slate-400 font-bold">3. Điều chỉnh tỷ lệ phần trăm</label>
+                      <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${totalPercent === 100 ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" : "bg-rose-500/10 text-rose-400 border border-rose-500/20"}`}>
+                        Tổng: {totalPercent}% / 100%
+                      </span>
+                    </div>
+
+                    <div className="space-y-3.5">
+                      {Object.entries(jarPercentages).map(([cat, pct]) => {
+                        const amount = Math.round((pct / 100) * monthlyIncome);
+                        let name = cat;
+                        if (cat === "Food & Beverage") name = "Ăn uống & Ẩm thực";
+                        if (cat === "Transportation") name = "Di chuyển & Xe cộ";
+                        if (cat === "Shopping") name = "Mua sắm & Shopping";
+                        if (cat === "Bills & Utilities") name = "Hóa đơn & Tiện ích";
+                        if (cat === "Entertainment") name = "Giải trí & Vui chơi";
+                        if (cat === "Other") name = "Tích lũy & Dự phòng";
+
+                        return (
+                          <div key={cat} className="p-3 rounded-xl bg-slate-900/50 border border-white/5 space-y-2">
+                            <div className="flex justify-between items-center text-xs">
+                              <span className="font-bold text-slate-300">{name}</span>
+                              <span className="font-extrabold text-indigo-400">{pct}% <span className="text-[10px] text-slate-500">({amount.toLocaleString()}đ)</span></span>
+                            </div>
+                            <input 
+                              type="range"
+                              min="0"
+                              max="100"
+                              step="5"
+                              value={pct}
+                              onChange={(e) => handlePercentageChange(cat, Number(e.target.value))}
+                              className="w-full h-1 bg-slate-950 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* SAVE ALLOCATION BUTTON */}
                   <button 
-                    onClick={() => {
-                      const cat = (document.getElementById("budget_category") as HTMLSelectElement).value;
-                      const lim = (document.getElementById("budget_limit") as HTMLInputElement).value;
-                      if(!lim || isNaN(Number(lim))) return;
-                      
-                      setBudgets(prev => prev.map(b => {
-                        if (b.category === cat) {
-                          return { ...b, limit_amount: Number(lim) };
-                        }
-                        return b;
-                      }));
-                      
-                      (document.getElementById("budget_limit") as HTMLInputElement).value = "";
-                    }}
-                    className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition-all glow-indigo"
+                    onClick={handleSaveJars}
+                    disabled={totalPercent !== 100}
+                    className="w-full py-3.5 rounded-xl bg-gradient-to-r from-indigo-600 to-cyan-500 hover:from-indigo-500 hover:to-cyan-400 text-white text-xs font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed glow-indigo"
                   >
-                    Cập nhật hạn mức
+                    {totalPercent === 100 ? "Lưu & Phân bổ Hũ Ngân Sách" : `Tỷ lệ chưa cân bằng (Hiện tại: ${totalPercent}%)`}
                   </button>
                 </div>
-              </div>
 
-              {/* View current limits list */}
-              <div className="glass-card rounded-2xl p-6 border border-white/5 space-y-4">
-                <h3 className="text-sm font-bold text-slate-300">Hạn Mức Đang Thiết Lập</h3>
-                
-                <div className="space-y-4">
-                  {budgets.map((b, i) => {
-                    const percent = Math.min(100, Math.round((b.spent_amount / b.limit_amount) * 100));
-                    return (
-                      <div key={i} className="p-3.5 rounded-xl bg-slate-900 border border-white/5 space-y-2">
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="font-bold text-white">{b.category}</span>
-                          <span className="text-[11px] text-slate-400">{percent}% Đã tiêu</span>
-                        </div>
-                        <div className="flex justify-between items-center text-[10px] text-slate-500">
-                          <span>Đã tiêu: {b.spent_amount.toLocaleString()}đ</span>
-                          <span>Hạn mức: {b.limit_amount.toLocaleString()}đ</span>
-                        </div>
-                        <div className="h-1.5 w-full bg-slate-950 rounded-full overflow-hidden">
-                          <div className={`h-full ${percent >= 90 ? 'bg-rose-500' : percent >= 75 ? 'bg-amber-500' : 'bg-indigo-500'}`} style={{ width: `${percent}%` }} />
-                        </div>
-                      </div>
-                    );
-                  })}
+                {/* RIGHT PANEL: TIMO/MOMO JARS DISPLAY VISUAL */}
+                <div className="lg:col-span-6 space-y-6">
+                  <div className="glass-card rounded-2xl p-6 border border-white/5 space-y-4">
+                    <h3 className="text-sm font-bold text-slate-300">Tổng Quan Hũ Ngân Sách</h3>
+                    <p className="text-[10px] text-slate-500">Tiến độ chi tiêu thực tế của các hũ so với hạn mức</p>
+                    
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {Object.entries(jarPercentages).map(([cat, pct]) => {
+                        const limit = Math.round((pct / 100) * monthlyIncome);
+                        const b = budgets.find(x => x.category === cat) || { spent_amount: 0, limit_amount: limit };
+                        const percent = Math.min(100, Math.round((b.spent_amount / limit) * 100));
+                        const remaining = Math.max(0, limit - b.spent_amount);
+
+                        let name = cat;
+                        let emoji = "🍔";
+                        let colorClass = "from-amber-500 to-orange-600";
+                        if (cat === "Food & Beverage") { name = "Ăn uống"; emoji = "☕"; colorClass = "from-orange-500 to-red-600"; }
+                        if (cat === "Transportation") { name = "Di chuyển"; emoji = "🚗"; colorClass = "from-cyan-500 to-blue-600"; }
+                        if (cat === "Shopping") { name = "Mua sắm"; emoji = "🛍️"; colorClass = "from-pink-500 to-rose-600"; }
+                        if (cat === "Bills & Utilities") { name = "Hóa đơn"; emoji = "⚡"; colorClass = "from-yellow-500 to-amber-600"; }
+                        if (cat === "Entertainment") { name = "Giải trí"; emoji = "🎬"; colorClass = "from-purple-500 to-indigo-600"; }
+                        if (cat === "Other") { name = "Tích lũy"; emoji = "🐖"; colorClass = "from-emerald-500 to-teal-600"; }
+
+                        return (
+                          <div key={cat} className="p-4 rounded-2xl bg-slate-900 border border-white/5 flex flex-col justify-between space-y-3 hover:border-white/10 transition-all">
+                            <div className="flex items-center justify-between">
+                              <span className="text-2xl">{emoji}</span>
+                              <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold bg-white/5 border border-white/10 text-slate-400`}>
+                                {pct}% hũ
+                              </span>
+                            </div>
+
+                            <div>
+                              <h4 className="font-extrabold text-white text-xs">{name}</h4>
+                              <p className="text-[10px] text-slate-500 mt-0.5">Hạn mức: {limit.toLocaleString()}đ</p>
+                            </div>
+
+                            <div className="space-y-1.5">
+                              <div className="flex justify-between text-[9px] text-slate-400">
+                                <span>Đã chi: {b.spent_amount.toLocaleString()}đ</span>
+                                <span>{percent}%</span>
+                              </div>
+                              <div className="h-1.5 w-full bg-slate-950 rounded-full overflow-hidden">
+                                <div 
+                                  className={`h-full rounded-full bg-gradient-to-r ${colorClass}`}
+                                  style={{ width: `${percent}%` }}
+                                />
+                              </div>
+                            </div>
+
+                            <div className="pt-1.5 border-t border-white/5 flex justify-between items-center text-[9px]">
+                              <span className="text-slate-500">Còn lại:</span>
+                              <span className={`font-bold ${percent >= 90 ? "text-rose-400" : percent >= 75 ? "text-amber-400" : "text-emerald-400"}`}>
+                                {remaining.toLocaleString()}đ
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
-
-          </div>
-        )}
+          );
+        })()}
 
         {/* TAB 5: SECURITY / CHANGE PASSWORD */}
         {activeTab === "security" && (
@@ -1289,6 +1744,234 @@ export default function Dashboard() {
           </div>
         )}
       </main>
+
+      {/* --- FLOATING AI CHATBOX WIDGET --- */}
+      <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end">
+        {/* Chat Window */}
+        {isChatOpen && (
+          <div className="w-80 sm:w-96 h-[480px] mb-4 bg-slate-950/95 border border-white/10 rounded-2xl shadow-2xl flex flex-col overflow-hidden backdrop-blur-xl animate-in fade-in slide-in-from-bottom-5 duration-200">
+            {/* Header */}
+            <div className="p-4 bg-gradient-to-r from-indigo-600/30 to-cyan-500/30 border-b border-white/10 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="h-8 w-8 rounded-lg bg-gradient-to-tr from-indigo-500 to-cyan-400 flex items-center justify-center glow-indigo">
+                  <Sparkles className="h-4 w-4 text-white" />
+                </div>
+                <div>
+                  <h4 className="text-xs font-extrabold text-white">AuraAI Assistant</h4>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                    <span className="text-[10px] text-slate-400 font-semibold">Trực tuyến</span>
+                  </div>
+                </div>
+              </div>
+              <button 
+                onClick={() => setIsChatOpen(false)}
+                className="text-slate-400 hover:text-white transition-colors p-1 rounded-lg hover:bg-white/5"
+              >
+                <Plus className="h-4 w-4 rotate-45" />
+              </button>
+            </div>
+
+            {/* Chat Messages Log */}
+            <div className="flex-1 p-4 overflow-y-auto space-y-4 scrollbar-thin">
+              {chatMessages.map((msg, index) => (
+                <div key={index} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+                  <div className={`max-w-[85%] rounded-2xl p-3 text-xs leading-relaxed ${
+                    msg.role === "user" 
+                      ? "bg-gradient-to-r from-indigo-600 to-cyan-500 text-white font-medium rounded-tr-none shadow-md"
+                      : "bg-slate-900 border border-white/5 text-slate-300 rounded-tl-none"
+                  }`}>
+                    {renderMessageContent(msg.content)}
+                  </div>
+                </div>
+              ))}
+              
+              {/* Chat Loading State */}
+              {chatLoading && (
+                <div className="flex justify-start">
+                  <div className="bg-slate-900 border border-white/5 text-slate-400 rounded-2xl rounded-tl-none p-3 text-xs flex items-center gap-2">
+                    <div className="flex gap-1">
+                      <span className="h-1.5 w-1.5 rounded-full bg-indigo-400 animate-bounce" style={{ animationDelay: "0ms" }}></span>
+                      <span className="h-1.5 w-1.5 rounded-full bg-indigo-400 animate-bounce" style={{ animationDelay: "150ms" }}></span>
+                      <span className="h-1.5 w-1.5 rounded-full bg-indigo-400 animate-bounce" style={{ animationDelay: "300ms" }}></span>
+                    </div>
+                    <span>AuraAI đang phân tích...</span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Suggested Questions */}
+            {chatSuggestions.length > 0 && !chatLoading && (
+              <div className="px-3 py-2 border-t border-white/5 bg-slate-950/50 flex gap-1.5 overflow-x-auto whitespace-nowrap scrollbar-none">
+                {chatSuggestions.map((q, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => handleSendChatMessage(q)}
+                    className="text-[9px] bg-indigo-950/30 hover:bg-indigo-900/40 border border-indigo-500/20 hover:border-indigo-500/40 text-indigo-300 px-2.5 py-1 rounded-full font-semibold transition-all duration-200 shrink-0"
+                  >
+                    {q}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Input Form */}
+            <form 
+              onSubmit={(e) => { e.preventDefault(); handleSendChatMessage(); }}
+              className="p-3 bg-slate-950 border-t border-white/10 flex gap-2"
+            >
+              <input
+                type="text"
+                value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)}
+                placeholder="Hỏi về ngân sách, chi tiêu của bạn..."
+                className="flex-1 bg-slate-900 border border-white/5 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                disabled={chatLoading}
+              />
+              <button
+                type="submit"
+                disabled={chatLoading || !chatInput.trim()}
+                className="bg-indigo-600 hover:bg-indigo-500 text-white p-2 rounded-xl transition-all shadow-md flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed glow-indigo"
+              >
+                <ArrowUpRight className="h-4 w-4" />
+              </button>
+            </form>
+          </div>
+        )}
+
+        {/* Floating Button */}
+        <button
+          onClick={() => setIsChatOpen(!isChatOpen)}
+          className="h-14 w-14 rounded-full bg-gradient-to-r from-indigo-600 to-cyan-500 text-white flex items-center justify-center shadow-2xl transition-transform duration-300 hover:scale-110 glow-indigo relative group"
+        >
+          {isChatOpen ? (
+            <Plus className="h-6 w-6 rotate-45 transition-transform duration-300" />
+          ) : (
+            <>
+              <Sparkles className="h-6 w-6 transition-transform duration-300 group-hover:rotate-12" />
+              <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-cyan-500"></span>
+              </span>
+            </>
+          )}
+        </button>
+      </div>
+
+      {/* EDIT TRANSACTION MODAL */}
+      {editingTransaction && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
+          <div className="glass-card rounded-2xl p-6 border border-white/10 max-w-md w-full space-y-6 shadow-2xl relative">
+            <div>
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <Edit className="h-5 w-5 text-indigo-400" /> Chỉnh Sửa Giao Dịch
+              </h3>
+              <p className="text-[11px] text-slate-400 mt-1">Cập nhật thông tin chi tiết của giao dịch này.</p>
+            </div>
+
+            <form onSubmit={handleSaveEdit} className="space-y-4 text-xs">
+              <div className="grid grid-cols-2 gap-4">
+                {/* Type Choice */}
+                <div>
+                  <label className="text-slate-400 block mb-1.5 font-bold">Loại giao dịch</label>
+                  <select 
+                    value={editType} 
+                    onChange={(e: any) => setEditType(e.target.value)}
+                    className="w-full bg-slate-900 border border-white/5 rounded-xl px-3 py-2 text-white font-bold focus:outline-none focus:border-indigo-500"
+                  >
+                    <option value="expense">Khoản Chi Tiêu (-)</option>
+                    <option value="income">Khoản Thu Nhập (+)</option>
+                  </select>
+                </div>
+                
+                {/* Date */}
+                <div>
+                  <label className="text-slate-400 block mb-1.5 font-bold">Ngày thực hiện</label>
+                  <input 
+                    type="date"
+                    value={editTransactionDate}
+                    onChange={(e) => setEditTransactionDate(e.target.value)}
+                    className="w-full bg-slate-900 border border-white/5 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
+                    required
+                  />
+                </div>
+              </div>
+
+              {/* Amount */}
+              <div>
+                <label className="text-slate-400 block mb-1.5 font-bold">Số tiền (VND)</label>
+                <input 
+                  type="text"
+                  value={editAmount}
+                  onChange={(e) => setEditAmount(formatVNDString(e.target.value))}
+                  className="w-full bg-slate-900 border border-white/5 rounded-xl px-3 py-2 text-emerald-400 font-extrabold text-sm focus:outline-none focus:border-indigo-500"
+                  required
+                />
+              </div>
+
+              {/* Store Name / Merchant */}
+              <div>
+                <label className="text-slate-400 block mb-1.5 font-bold">Cửa hàng / Đối tác (Merchant)</label>
+                <input 
+                  type="text"
+                  value={editMerchant}
+                  onChange={(e) => setEditMerchant(e.target.value)}
+                  className="w-full bg-slate-900 border border-white/5 rounded-xl px-3 py-2 text-white font-semibold focus:outline-none focus:border-indigo-500"
+                  placeholder="Ví dụ: Highlands Coffee, WinMart..."
+                />
+              </div>
+
+              {/* Category Selector */}
+              <div>
+                <label className="text-slate-400 block mb-1.5 font-bold">Danh mục chi tiêu</label>
+                <select 
+                  value={editCategory}
+                  onChange={(e) => setEditCategory(e.target.value)}
+                  className="w-full bg-slate-900 border border-white/5 rounded-xl px-3 py-2 text-slate-300 focus:outline-none focus:border-indigo-500"
+                >
+                  <option value="Food & Beverage">Food & Beverage (Ăn uống)</option>
+                  <option value="Transportation">Transportation (Di chuyển)</option>
+                  <option value="Shopping">Shopping (Mua sắm)</option>
+                  <option value="Bills & Utilities">Bills & Utilities (Hóa đơn)</option>
+                  <option value="Entertainment">Entertainment (Giải trí)</option>
+                  <option value="Other">Other (Khác)</option>
+                </select>
+              </div>
+
+              {/* Description Note */}
+              <div>
+                <label className="text-slate-400 block mb-1.5 font-bold">Mô tả / Ghi chú</label>
+                <input 
+                  type="text"
+                  value={editDescription}
+                  onChange={(e) => setEditDescription(e.target.value)}
+                  className="w-full bg-slate-900 border border-white/5 rounded-xl px-3 py-2 text-slate-300 focus:outline-none focus:border-indigo-500"
+                  placeholder="Nội dung chi tiêu..."
+                  required
+                />
+              </div>
+
+              {/* Buttons */}
+              <div className="pt-4 flex gap-3">
+                <button 
+                  type="submit" 
+                  className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-indigo-600 hover:from-emerald-500 hover:to-indigo-500 text-white font-bold transition-all glow-indigo"
+                >
+                  Lưu thay đổi
+                </button>
+                <button 
+                  type="button" 
+                  onClick={() => setEditingTransaction(null)}
+                  className="px-4 py-2.5 rounded-xl bg-slate-900 border border-white/5 hover:border-white/10 text-slate-400 font-bold transition-all"
+                >
+                  Hủy bỏ
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
