@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import Column, String, Float, DateTime, ForeignKey, Boolean, Date
+from sqlalchemy import Column, String, Float, DateTime, ForeignKey, Boolean, Date, Integer
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
@@ -22,6 +22,7 @@ class User(Base):
     budgets = relationship("Budget", back_populates="user", cascade="all, delete-orphan")
     ocr_logs = relationship("OCRLog", back_populates="user", cascade="all, delete-orphan")
     forecasts = relationship("Forecast", back_populates="user", cascade="all, delete-orphan")
+    recurring_templates = relationship("RecurringTemplate", back_populates="user", cascade="all, delete-orphan")
 
 
 class Transaction(Base):
@@ -85,3 +86,25 @@ class Forecast(Base):
 
     # Relationships
     user = relationship("User", back_populates="forecasts")
+
+
+class RecurringTemplate(Base):
+    __tablename__ = "recurring_templates"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    amount = Column(Float, nullable=False)
+    type = Column(String, nullable=False)          # 'income' or 'expense'
+    category = Column(String, nullable=False)
+    description = Column(String, nullable=True)
+    frequency = Column(String, nullable=False)     # 'daily', 'weekly', 'monthly', 'yearly'
+    day_of_week = Column(Integer, nullable=True)   # 0=Mon ... 6=Sun (weekly only)
+    day_of_month = Column(Integer, nullable=True)  # 1-31 (monthly only)
+    next_run_date = Column(Date, nullable=False)
+    end_date = Column(Date, nullable=True)
+    is_active = Column(Boolean, default=True)
+    is_auto_execute = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    # Relationships
+    user = relationship("User", back_populates="recurring_templates")

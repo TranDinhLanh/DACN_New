@@ -196,4 +196,55 @@ export const api = {
       requiresAuth: true,
     });
   },
+
+  // --- RECURRING TEMPLATES API ---
+  getRecurringTemplates() {
+    return fetchAPI("/recurring-templates/", { method: "GET", requiresAuth: true });
+  },
+
+  createRecurringTemplate(data: {
+    amount: number;
+    type: string;
+    category: string;
+    description?: string;
+    frequency: string;
+    day_of_week?: number | null;
+    day_of_month?: number | null;
+    start_date: string;
+    end_date?: string | null;
+    is_active?: boolean;
+    is_auto_execute?: boolean;
+  }) {
+    return fetchAPI("/recurring-templates/", {
+      method: "POST",
+      body: JSON.stringify(data),
+      requiresAuth: true,
+    });
+  },
+
+  updateRecurringTemplate(id: string, data: {
+    amount?: number;
+    type?: string;
+    category?: string;
+    description?: string;
+    frequency?: string;
+    day_of_week?: number | null;
+    day_of_month?: number | null;
+    end_date?: string | null;
+    is_active?: boolean;
+    is_auto_execute?: boolean;
+  }) {
+    return fetchAPI(`/recurring-templates/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+      requiresAuth: true,
+    });
+  },
+
+  deleteRecurringTemplate(id: string) {
+    return fetchAPI(`/recurring-templates/${id}`, {
+      method: "DELETE",
+      requiresAuth: true,
+    });
+  },
 };
