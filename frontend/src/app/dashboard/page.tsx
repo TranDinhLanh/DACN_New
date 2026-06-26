@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import useSWR, { mutate } from "swr";
 import {
   Sparkles,
   TrendingUp,
@@ -23,7 +24,8 @@ import {
   HelpCircle,
   Lock,
   LogOut,
-  Clock
+  Clock,
+  Search
 } from "lucide-react";
 import { api } from "@/lib/api";
 import {
@@ -83,7 +85,7 @@ const COLORS = ["#6366f1", "#10b981", "#ef4444", "#f59e0b", "#06b6d4", "#a855f7"
 export default function Dashboard() {
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
-  
+
   // Helper to format raw number strings to Vietnamese format (e.g., 15000000 -> 15.000.000)
   const formatVNDString = (valStr: string | number) => {
     if (valStr === undefined || valStr === null || valStr === "") return "";
@@ -101,7 +103,7 @@ export default function Dashboard() {
   const [user, setUser] = useState<{ email: string; full_name?: string } | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [budgets, setBudgets] = useState<Budget[]>([]);
-  
+
   // Jars Budget Allocator states
   const [monthlyIncome, setMonthlyIncome] = useState<number>(10000000);
   const [jarPercentages, setJarPercentages] = useState<{ [key: string]: number }>({
@@ -112,9 +114,12 @@ export default function Dashboard() {
     "Entertainment": 10,
     "Other": 10
   });
-  
+
   // Tab/Screen navigation State (added security tab)
-  const [activeTab, setActiveTab] = useState<"overview" | "add" | "ocr" | "budgets" | "security">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "add" | "ocr" | "budgets" | "security" | "history">("overview");
+  const [overviewSubTab, setOverviewSubTab] = useState<"all" | "income" | "expense">("all");
+  const [historySearch, setHistorySearch] = useState("");
+  const [historyFilter, setHistoryFilter] = useState<"all" | "income" | "expense">("all");
 
   // Form inputs for Transaction creation
   const [amount, setAmount] = useState("");
@@ -238,7 +243,7 @@ export default function Dashboard() {
       if (title.length > 30) {
         title = title.substring(0, 27) + "...";
       }
-      
+
       setPastChats(prev => {
         const filtered = prev.filter(c => c.id !== activeChatId);
         const updated = [{
@@ -264,7 +269,7 @@ export default function Dashboard() {
     const updated = pastChats.filter(c => c.id !== id);
     setPastChats(updated);
     localStorage.setItem("aura_past_chats", JSON.stringify(updated));
-    
+
     if (activeChatId === id) {
       const newId = Date.now().toString();
       const initialMsg = [
@@ -280,10 +285,59 @@ export default function Dashboard() {
     }
   };
 
+  // Fetch transactions and budgets using SWR for automatic updates
+  const { data: fetchedTransactions } = useSWR(
+    mounted && user ? "transactions" : null,
+    () => api.getTransactions(),
+    {
+      refreshInterval: 5000, // auto-refresh every 5 seconds
+      revalidateOnFocus: true,
+    }
+  );
+
+  const { data: fetchedBudgets } = useSWR(
+    mounted && user ? "budgets" : null,
+    () => api.getBudgets(),
+    {
+      refreshInterval: 5000,
+      revalidateOnFocus: true,
+    }
+  );
+
+  // Sync SWR data to component state
+  useEffect(() => {
+    if (fetchedTransactions) {
+      setTransactions(fetchedTransactions);
+    }
+  }, [fetchedTransactions]);
+
+  useEffect(() => {
+    if (fetchedBudgets) {
+      setBudgets(fetchedBudgets);
+      const data = fetchedBudgets;
+      if (data && data.length > 0) {
+        const totalLimit = data.reduce((sum: number, b: Budget) => sum + b.limit_amount, 0);
+        if (totalLimit > 0) {
+          setMonthlyIncome(totalLimit);
+          // Also update jar percentages based on the loaded limits!
+          setJarPercentages(prev => {
+            const updated = { ...prev };
+            data.forEach((b: Budget) => {
+              if (b.category in updated) {
+                updated[b.category] = Math.round((b.limit_amount / totalLimit) * 100);
+              }
+            });
+            return updated;
+          });
+        }
+      }
+    }
+  }, [fetchedBudgets]);
+
   // Auth and hydration verification shield
   useEffect(() => {
     setMounted(true);
-    
+
     // Check if token exists
     const token = localStorage.getItem("auth_token");
     if (!token) {
@@ -295,36 +349,6 @@ export default function Dashboard() {
     api.getMe()
       .then(userData => {
         setUser(userData);
-        
-        // Fetch transactions from API
-        api.getTransactions()
-          .then(data => {
-            setTransactions(data || []);
-          })
-          .catch(err => console.error("Failed to load transactions:", err));
-
-        // Fetch budgets from API
-        api.getBudgets()
-          .then(data => {
-            setBudgets(data || []);
-            if (data && data.length > 0) {
-              const totalLimit = data.reduce((sum: number, b: Budget) => sum + b.limit_amount, 0);
-              if (totalLimit > 0) {
-                setMonthlyIncome(totalLimit);
-                // Also update jar percentages based on the loaded limits!
-                setJarPercentages(prev => {
-                  const updated = { ...prev };
-                  data.forEach((b: Budget) => {
-                    if (b.category in updated) {
-                      updated[b.category] = Math.round((b.limit_amount / totalLimit) * 100);
-                    }
-                  });
-                  return updated;
-                });
-              }
-            }
-          })
-          .catch(err => console.error("Failed to load budgets:", err));
       })
       .catch(err => {
         console.error("Auth verification failed:", err);
@@ -339,9 +363,9 @@ export default function Dashboard() {
       setAiSuggestion(null);
       return;
     }
-    
+
     const descLower = description.toLowerCase();
-    
+
     // Quick keyword parser mimicking the FastAPI AI classifier
     if (descLower.includes("coffee") || descLower.includes("tra sua") || descLower.includes("an") || descLower.includes("highlands") || descLower.includes("gongcha") || descLower.includes("phuc long")) {
       setAiSuggestion("Food & Beverage");
@@ -400,6 +424,8 @@ export default function Dashboard() {
             return b;
           }));
         }
+        mutate("transactions");
+        mutate("budgets");
       })
       .catch(err => {
         console.error("Failed to save transaction to database:", err);
@@ -421,7 +447,7 @@ export default function Dashboard() {
     setDescription("");
     setMerchant("");
     setCategory("Other");
-    
+
     // Redirect to overview
     setActiveTab("overview");
   };
@@ -429,13 +455,13 @@ export default function Dashboard() {
   // Real OCR & LayoutLMv3 Upload integration
   const handleOcrFileSubmit = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
-    
+
     const file = files[0];
-    
+
     // Create instant local URL for real-time receipt image preview
     const previewUrl = URL.createObjectURL(file);
     setOcrPreviewUrl(previewUrl);
-    
+
     setOcrLoading(true);
     setOcrSuccess(false);
     setOcrError(null);
@@ -456,11 +482,11 @@ export default function Dashboard() {
       }
 
       const parsedData = await response.json();
-      
+
       setOcrLoading(false);
       setOcrSuccess(true);
       setOcrExtractedData(parsedData);
-      
+
       // Auto pre-populate transaction forms with live LayoutLMv3 results
       setMerchant(parsedData.merchant || "Cửa hàng không rõ");
       setAmount(parsedData.amount ? formatVNDString(parsedData.amount.toString()) : "0");
@@ -493,6 +519,8 @@ export default function Dashboard() {
             return b;
           }));
         }
+        mutate("transactions");
+        mutate("budgets");
       })
       .catch(err => {
         console.error("Failed to delete transaction from database:", err);
@@ -525,7 +553,7 @@ export default function Dashboard() {
     if (!editingTransaction) return;
     const oldTx = editingTransaction;
     const newAmount = Number(cleanVNDString(editAmount));
-    
+
     const updatePayload = {
       amount: newAmount,
       type: editType,
@@ -551,6 +579,8 @@ export default function Dashboard() {
           return { ...b, spent_amount: spent };
         }));
 
+        mutate("transactions");
+        mutate("budgets");
         setEditingTransaction(null);
       })
       .catch(err => {
@@ -569,19 +599,38 @@ export default function Dashboard() {
       });
   };
 
-  // Pre-aggregate category spending data for Recharts Pie Chart
-  const getPieData = () => {
+  // Pre-aggregate category spending/income data for Recharts Pie Chart
+  const getPieData = (chartType: "income" | "expense" = "expense") => {
     const dataMap: { [key: string]: number } = {};
     transactions
-      .filter(t => t.type === "expense")
+      .filter(t => t.type === chartType)
       .forEach(t => {
         dataMap[t.category] = (dataMap[t.category] || 0) + t.amount;
       });
-      
+
     return Object.keys(dataMap).map(key => ({
       name: key,
       value: dataMap[key]
     }));
+  };
+
+  // Find category with highest income
+  const getHighestIncomeSource = () => {
+    const incomeTxs = transactions.filter(t => t.type === "income");
+    if (incomeTxs.length === 0) return "Chưa có";
+    const dataMap: { [key: string]: number } = {};
+    incomeTxs.forEach(t => {
+      dataMap[t.category] = (dataMap[t.category] || 0) + t.amount;
+    });
+    let maxCat = "";
+    let maxVal = -1;
+    Object.entries(dataMap).forEach(([cat, val]) => {
+      if (val > maxVal) {
+        maxVal = val;
+        maxCat = cat;
+      }
+    });
+    return `${maxCat || "Khác"} (${maxVal.toLocaleString()}đ)`;
   };
 
   // Dynamic future Prophet prediction line simulator using mock linear math
@@ -597,7 +646,7 @@ export default function Dashboard() {
       const base = 250000 + (i * 2000); // minor growth trend
       const variation = isWeekend ? 1.35 : 0.85;
       const noise = 0.9 + Math.random() * 0.2;
-      
+
       forecast.push({
         date: forecastDate.toLocaleDateString("vi-VN", { day: "numeric", month: "short" }),
         "Dự đoán": Math.round((base * variation * noise) / 1000) * 1000
@@ -628,16 +677,16 @@ export default function Dashboard() {
       }));
 
       const data = await api.chatWithAI(text, historyToSend);
-      
+
       setChatMessages(prev => [...prev, { role: "assistant", content: data.response }]);
       if (data.suggested_questions) {
         setChatSuggestions(data.suggested_questions);
       }
     } catch (err: any) {
       console.error("Chat error:", err);
-      setChatMessages(prev => [...prev, { 
-        role: "assistant", 
-        content: `⚠️ Đã xảy ra lỗi kết nối với trợ lý AI: ${err.message || "Vui lòng thử lại sau."}` 
+      setChatMessages(prev => [...prev, {
+        role: "assistant",
+        content: `⚠️ Đã xảy ra lỗi kết nối với trợ lý AI: ${err.message || "Vui lòng thử lại sau."}`
       }]);
     } finally {
       setChatLoading(false);
@@ -652,13 +701,13 @@ export default function Dashboard() {
       const afterParts: string[] = [];
       const tableRows: string[][] = [];
       let tableStarted = false;
-      
+
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i].trim();
         if (line.startsWith("|")) {
           tableStarted = true;
           if (line.includes("---") || line.includes(":-")) continue;
-          
+
           const cells = line.split("|").map(c => c.trim()).filter((c, idx, arr) => idx > 0 && idx < arr.length - 1);
           if (cells.length > 0) {
             tableRows.push(cells);
@@ -671,7 +720,7 @@ export default function Dashboard() {
           }
         }
       }
-      
+
       if (tableRows.length > 0) {
         return (
           <div className="space-y-2">
@@ -701,7 +750,7 @@ export default function Dashboard() {
         );
       }
     }
-    
+
     return <span className="whitespace-pre-line">{parseBoldText(content)}</span>;
   };
 
@@ -728,7 +777,7 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen bg-[#0b0f19] flex flex-col md:flex-row">
-      
+
       {/* 1. Sidebar Panel */}
       <aside className="w-full md:w-64 bg-slate-950/40 border-r border-white/5 flex flex-col justify-between shrink-0">
         <div>
@@ -752,25 +801,34 @@ export default function Dashboard() {
 
           {/* Nav items */}
           <nav className="p-4 space-y-1">
-            <button 
+            <button
               onClick={() => setActiveTab("overview")}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 ${
-                activeTab === "overview" 
-                  ? "bg-indigo-600/25 border border-indigo-500/30 text-white" 
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 ${activeTab === "overview"
+                  ? "bg-indigo-600/25 border border-indigo-500/30 text-white"
                   : "text-slate-400 hover:bg-slate-900 hover:text-white"
-              }`}
+                }`}
             >
               <Layers className="h-4.5 w-4.5" />
               Tổng quan Dashboard
             </button>
 
-            <button 
-              onClick={() => setActiveTab("ocr")}
-              className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 ${
-                activeTab === "ocr" 
-                  ? "bg-indigo-600/25 border border-indigo-500/30 text-white" 
+            <button
+              onClick={() => setActiveTab("history")}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 ${activeTab === "history"
+                  ? "bg-indigo-600/25 border border-indigo-500/30 text-white"
                   : "text-slate-400 hover:bg-slate-900 hover:text-white"
-              }`}
+                }`}
+            >
+              <Clock className="h-4.5 w-4.5" />
+              Lịch sử thu chi
+            </button>
+
+            <button
+              onClick={() => setActiveTab("ocr")}
+              className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 ${activeTab === "ocr"
+                  ? "bg-indigo-600/25 border border-indigo-500/30 text-white"
+                  : "text-slate-400 hover:bg-slate-900 hover:text-white"
+                }`}
             >
               <div className="flex items-center gap-3">
                 <FileText className="h-4.5 w-4.5" />
@@ -779,37 +837,34 @@ export default function Dashboard() {
               <span className="bg-gradient-to-r from-indigo-500 to-cyan-400 text-white text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider glow-indigo">OCR</span>
             </button>
 
-            <button 
+            <button
               onClick={() => setActiveTab("add")}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 ${
-                activeTab === "add" 
-                  ? "bg-indigo-600/25 border border-indigo-500/30 text-white" 
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 ${activeTab === "add"
+                  ? "bg-indigo-600/25 border border-indigo-500/30 text-white"
                   : "text-slate-400 hover:bg-slate-900 hover:text-white"
-              }`}
+                }`}
             >
               <Plus className="h-4.5 w-4.5" />
               Thêm giao dịch
             </button>
 
-            <button 
+            <button
               onClick={() => setActiveTab("budgets")}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 ${
-                activeTab === "budgets" 
-                  ? "bg-indigo-600/25 border border-indigo-500/30 text-white" 
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 ${activeTab === "budgets"
+                  ? "bg-indigo-600/25 border border-indigo-500/30 text-white"
                   : "text-slate-400 hover:bg-slate-900 hover:text-white"
-              }`}
+                }`}
             >
               <AlertTriangle className="h-4.5 w-4.5" />
               Hạn mức ngân sách
             </button>
 
-            <button 
+            <button
               onClick={() => setActiveTab("security")}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 ${
-                activeTab === "security" 
-                  ? "bg-indigo-600/25 border border-indigo-500/30 text-white" 
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 ${activeTab === "security"
+                  ? "bg-indigo-600/25 border border-indigo-500/30 text-white"
                   : "text-slate-400 hover:bg-slate-900 hover:text-white"
-              }`}
+                }`}
             >
               <Lock className="h-4.5 w-4.5" />
               Đổi mật khẩu
@@ -819,7 +874,7 @@ export default function Dashboard() {
 
         {/* Back Link */}
         <div className="p-4 border-t border-white/5 flex flex-col gap-2">
-          <button 
+          <button
             onClick={() => {
               api.logout();
               router.push("/login");
@@ -828,7 +883,7 @@ export default function Dashboard() {
           >
             <LogOut className="h-4 w-4" /> Đăng xuất tài khoản
           </button>
-          
+
           <Link href="/" className="w-full block text-center py-2.5 rounded-xl text-xs font-semibold bg-slate-900 border border-white/5 hover:border-white/10 text-slate-400 hover:text-white transition-all duration-200">
             Quay lại trang chủ
           </Link>
@@ -837,11 +892,11 @@ export default function Dashboard() {
 
       {/* 2. Main Dashboard Content Grid */}
       <main className="flex-1 p-6 md:p-10 max-w-7xl mx-auto w-full overflow-y-auto">
-        
+
         {/* TAB 1: OVERVIEW SCREEN */}
         {activeTab === "overview" && (
           <div className="space-y-8">
-            
+
             {/* Header section */}
             <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
               <div>
@@ -850,7 +905,7 @@ export default function Dashboard() {
                 </h2>
                 <p className="text-slate-400 text-sm mt-0.5">Thời gian thực tế: {new Date().toLocaleDateString("vi-VN", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}</p>
               </div>
-              
+
               <div className="flex gap-3">
                 <button onClick={() => setActiveTab("ocr")} className="px-4 py-2 rounded-xl text-xs font-bold bg-indigo-600 text-white glow-indigo hover:bg-indigo-500 transition-all flex items-center gap-1.5">
                   <UploadCloud className="h-4 w-4" /> Quét Hóa Đơn AI
@@ -861,108 +916,244 @@ export default function Dashboard() {
               </div>
             </div>
 
+            {/* Sub-tabs for separating Income & Expense */}
+            <div className="flex border-b border-white/5 gap-6 text-sm">
+              <button
+                onClick={() => setOverviewSubTab("all")}
+                className={`pb-3 font-semibold transition-all relative ${
+                  overviewSubTab === "all"
+                    ? "text-indigo-400 border-b-2 border-indigo-500"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                Tổng Quan Chung
+              </button>
+              <button
+                onClick={() => setOverviewSubTab("income")}
+                className={`pb-3 font-semibold transition-all relative ${
+                  overviewSubTab === "income"
+                    ? "text-emerald-400 border-b-2 border-emerald-500"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                Phần Thu Nhập (+)
+              </button>
+              <button
+                onClick={() => setOverviewSubTab("expense")}
+                className={`pb-3 font-semibold transition-all relative ${
+                  overviewSubTab === "expense"
+                    ? "text-rose-400 border-b-2 border-rose-500"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                Phần Chi Tiêu (-)
+              </button>
+            </div>
+
             {/* Financial Quick Metrics */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {/* Card 1 */}
-              <div className="glass-card rounded-2xl p-6 relative overflow-hidden border-l-2 border-indigo-500">
-                <div className="absolute top-4 right-4 h-10 w-10 rounded-xl bg-indigo-500/10 flex items-center justify-center text-indigo-400">
-                  <Wallet className="h-5 w-5" />
-                </div>
-                <span className="text-xs text-slate-400 block font-medium">Tổng Số Dư Khả Dụng</span>
-                <span className="text-2xl font-extrabold text-white block mt-2 tracking-tight">
-                  {netBalance.toLocaleString()}đ
-                </span>
-                <span className="text-[10px] text-slate-500 block mt-1.5 flex items-center gap-1">
-                  Đã tự động tính từ lương & các khoản chi tiêu
-                </span>
-              </div>
+              {overviewSubTab === "all" && (
+                <>
+                  {/* Card 1 */}
+                  <div className="glass-card rounded-2xl p-6 relative overflow-hidden border-l-2 border-indigo-500">
+                    <div className="absolute top-4 right-4 h-10 w-10 rounded-xl bg-indigo-500/10 flex items-center justify-center text-indigo-400">
+                      <Wallet className="h-5 w-5" />
+                    </div>
+                    <span className="text-xs text-slate-400 block font-medium">Tổng Số Dư Khả Dụng</span>
+                    <span className="text-2xl font-extrabold text-white block mt-2 tracking-tight">
+                      {netBalance.toLocaleString()}đ
+                    </span>
+                    <span className="text-[10px] text-slate-500 block mt-1.5 flex items-center gap-1">
+                      Đã tự động tính từ lương & các khoản chi tiêu
+                    </span>
+                  </div>
 
-              {/* Card 2 */}
-              <div className="glass-card rounded-2xl p-6 relative overflow-hidden border-l-2 border-emerald-500">
-                <div className="absolute top-4 right-4 h-10 w-10 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-400">
-                  <ArrowUpRight className="h-5 w-5" />
-                </div>
-                <span className="text-xs text-slate-400 block font-medium">Tổng Thu Nhập Tháng Này</span>
-                <span className="text-2xl font-extrabold text-emerald-400 block mt-2 tracking-tight">
-                  +{displayIncome.toLocaleString()}đ
-                </span>
-                <span className="text-[10px] text-emerald-500/80 block mt-1.5 font-semibold">
-                  Tăng trưởng ổn định
-                </span>
-              </div>
+                  {/* Card 2 */}
+                  <div className="glass-card rounded-2xl p-6 relative overflow-hidden border-l-2 border-emerald-500">
+                    <div className="absolute top-4 right-4 h-10 w-10 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-400">
+                      <ArrowUpRight className="h-5 w-5" />
+                    </div>
+                    <span className="text-xs text-slate-400 block font-medium">Tổng Thu Nhập Tháng Này</span>
+                    <span className="text-2xl font-extrabold text-emerald-400 block mt-2 tracking-tight">
+                      +{displayIncome.toLocaleString()}đ
+                    </span>
+                    <span className="text-[10px] text-emerald-500/80 block mt-1.5 font-semibold">
+                      Tăng trưởng ổn định
+                    </span>
+                  </div>
 
-              {/* Card 3 */}
-              <div className="glass-card rounded-2xl p-6 relative overflow-hidden border-l-2 border-rose-500">
-                <div className="absolute top-4 right-4 h-10 w-10 rounded-xl bg-rose-500/10 flex items-center justify-center text-rose-400">
-                  <ArrowDownRight className="h-5 w-5" />
-                </div>
-                <span className="text-xs text-slate-400 block font-medium">Tổng Chi Tiêu Thực Tế</span>
-                <span className="text-2xl font-extrabold text-rose-400 block mt-2 tracking-tight">
-                  -{totalExpense.toLocaleString()}đ
-                </span>
-                <span className="text-[10px] text-rose-500/80 block mt-1.5 font-semibold">
-                  {transactions.filter(t => t.type === "expense").length} giao dịch chi tiêu ghi nhận
-                </span>
-              </div>
+                  {/* Card 3 */}
+                  <div className="glass-card rounded-2xl p-6 relative overflow-hidden border-l-2 border-rose-500">
+                    <div className="absolute top-4 right-4 h-10 w-10 rounded-xl bg-rose-500/10 flex items-center justify-center text-rose-400">
+                      <ArrowDownRight className="h-5 w-5" />
+                    </div>
+                    <span className="text-xs text-slate-400 block font-medium">Tổng Chi Tiêu Thực Tế</span>
+                    <span className="text-2xl font-extrabold text-rose-400 block mt-2 tracking-tight">
+                      -{totalExpense.toLocaleString()}đ
+                    </span>
+                    <span className="text-[10px] text-rose-500/80 block mt-1.5 font-semibold">
+                      {transactions.filter(t => t.type === "expense").length} giao dịch chi tiêu ghi nhận
+                    </span>
+                  </div>
+                </>
+              )}
+
+              {overviewSubTab === "income" && (
+                <>
+                  {/* Income Card 1 */}
+                  <div className="glass-card rounded-2xl p-6 relative overflow-hidden border-l-2 border-emerald-500">
+                    <div className="absolute top-4 right-4 h-10 w-10 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-400">
+                      <ArrowUpRight className="h-5 w-5" />
+                    </div>
+                    <span className="text-xs text-slate-400 block font-medium">Tổng Thu Nhập Tháng Này</span>
+                    <span className="text-2xl font-extrabold text-emerald-400 block mt-2 tracking-tight">
+                      +{displayIncome.toLocaleString()}đ
+                    </span>
+                    <span className="text-[10px] text-emerald-500/80 block mt-1.5 font-semibold">
+                      Dòng tiền thu của bạn ổn định
+                    </span>
+                  </div>
+
+                  {/* Income Card 2 */}
+                  <div className="glass-card rounded-2xl p-6 relative overflow-hidden border-l-2 border-indigo-500">
+                    <div className="absolute top-4 right-4 h-10 w-10 rounded-xl bg-indigo-500/10 flex items-center justify-center text-indigo-400">
+                      <FileText className="h-5 w-5" />
+                    </div>
+                    <span className="text-xs text-slate-400 block font-medium">Số Khoản Thu Ghi Nhận</span>
+                    <span className="text-2xl font-extrabold text-white block mt-2 tracking-tight">
+                      {transactions.filter(t => t.type === "income").length} khoản
+                    </span>
+                    <span className="text-[10px] text-slate-500 block mt-1.5 flex items-center gap-1">
+                      Các nguồn thu nhập tự động & thủ công
+                    </span>
+                  </div>
+
+                  {/* Income Card 3 */}
+                  <div className="glass-card rounded-2xl p-6 relative overflow-hidden border-l-2 border-cyan-500">
+                    <div className="absolute top-4 right-4 h-10 w-10 rounded-xl bg-cyan-500/10 flex items-center justify-center text-cyan-400">
+                      <TrendingUp className="h-5 w-5" />
+                    </div>
+                    <span className="text-xs text-slate-400 block font-medium">Nguồn Thu Lớn Nhất</span>
+                    <span className="text-lg font-extrabold text-cyan-400 block mt-3.5 tracking-tight truncate">
+                      {getHighestIncomeSource()}
+                    </span>
+                    <span className="text-[10px] text-cyan-500/80 block mt-1.5 font-semibold">
+                      Danh mục đem lại nguồn thu lớn nhất
+                    </span>
+                  </div>
+                </>
+              )}
+
+              {overviewSubTab === "expense" && (
+                <>
+                  {/* Expense Card 1 */}
+                  <div className="glass-card rounded-2xl p-6 relative overflow-hidden border-l-2 border-rose-500">
+                    <div className="absolute top-4 right-4 h-10 w-10 rounded-xl bg-rose-500/10 flex items-center justify-center text-rose-400">
+                      <ArrowDownRight className="h-5 w-5" />
+                    </div>
+                    <span className="text-xs text-slate-400 block font-medium">Tổng Chi Tiêu Thực Tế</span>
+                    <span className="text-2xl font-extrabold text-rose-400 block mt-2 tracking-tight">
+                      -{totalExpense.toLocaleString()}đ
+                    </span>
+                    <span className="text-[10px] text-rose-500/80 block mt-1.5 font-semibold">
+                      {transactions.filter(t => t.type === "expense").length} giao dịch chi tiêu ghi nhận
+                    </span>
+                  </div>
+
+                  {/* Expense Card 2 */}
+                  <div className="glass-card rounded-2xl p-6 relative overflow-hidden border-l-2 border-indigo-500">
+                    <div className="absolute top-4 right-4 h-10 w-10 rounded-xl bg-indigo-500/10 flex items-center justify-center text-indigo-400">
+                      <Layers className="h-5 w-5" />
+                    </div>
+                    <span className="text-xs text-slate-400 block font-medium">Hạn Mức Ngân Sách Tổng</span>
+                    <span className="text-2xl font-extrabold text-white block mt-2 tracking-tight">
+                      {budgets.reduce((sum, b) => sum + b.limit_amount, 0).toLocaleString()}đ
+                    </span>
+                    <span className="text-[10px] text-slate-500 block mt-1.5 flex items-center gap-1">
+                      Tổng hạn mức của các hũ chi tiêu
+                    </span>
+                  </div>
+
+                  {/* Expense Card 3 */}
+                  <div className="glass-card rounded-2xl p-6 relative overflow-hidden border-l-2 border-amber-500">
+                    <div className="absolute top-4 right-4 h-10 w-10 rounded-xl bg-amber-500/10 flex items-center justify-center text-amber-400">
+                      <AlertTriangle className="h-5 w-5" />
+                    </div>
+                    <span className="text-xs text-slate-400 block font-medium">Hũ Đang Cảnh Báo (&gt;75%)</span>
+                    <span className="text-2xl font-extrabold text-amber-400 block mt-2 tracking-tight">
+                      {budgets.filter(b => b.limit_amount > 0 && (b.spent_amount / b.limit_amount) >= 0.75).length} hũ
+                    </span>
+                    <span className="text-[10px] text-amber-500/80 block mt-1.5 font-semibold">
+                      Cần cân đối ngân sách cho các hũ này
+                    </span>
+                  </div>
+                </>
+              )}
             </div>
 
             {/* Active budget status warnings */}
-            <div className="glass-card rounded-2xl p-6 border border-white/5">
-              <h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2">
-                <AlertTriangle className="h-4.5 w-4.5 text-amber-500" /> Cảnh Báo Ngưỡng Hạn Mức Ngân Sách Tháng 5
-              </h3>
-              <div className="space-y-4">
-                {budgets.length > 0 ? (
-                  budgets.map((b, i) => {
-                    const percent = b.limit_amount > 0 ? Math.min(100, Math.round((b.spent_amount / b.limit_amount) * 100)) : 0;
-                    let colorClass = "bg-emerald-500";
-                    let textClass = "text-emerald-400";
-                    if (percent >= 90) {
-                      colorClass = "bg-rose-500 animate-pulse";
-                      textClass = "text-rose-400 font-bold";
-                    } else if (percent >= 75) {
-                      colorClass = "bg-amber-500";
-                      textClass = "text-amber-400";
-                    }
-                    
-                    return (
-                      <div key={i} className="space-y-1.5">
-                        <div className="flex items-center justify-between text-xs font-semibold">
-                          <span className="text-slate-300">{b.category}</span>
-                          <span className="text-slate-400">
-                            Đã chi <span className={textClass}>{b.spent_amount.toLocaleString()}đ</span> / {b.limit_amount.toLocaleString()}đ ({percent}%)
-                          </span>
+            {overviewSubTab !== "income" && (
+              <div className="glass-card rounded-2xl p-6 border border-white/5">
+                <h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2">
+                  <AlertTriangle className="h-4.5 w-4.5 text-amber-500" /> Cảnh Báo Ngưỡng Hạn Mức Ngân Sách Tháng 5
+                </h3>
+                <div className="space-y-4">
+                  {budgets.length > 0 ? (
+                    budgets.map((b, i) => {
+                      const percent = b.limit_amount > 0 ? Math.min(100, Math.round((b.spent_amount / b.limit_amount) * 100)) : 0;
+                      let colorClass = "bg-emerald-500";
+                      let textClass = "text-emerald-400";
+                      if (percent >= 90) {
+                        colorClass = "bg-rose-500 animate-pulse";
+                        textClass = "text-rose-400 font-bold";
+                      } else if (percent >= 75) {
+                        colorClass = "bg-amber-500";
+                        textClass = "text-amber-400";
+                      }
+
+                      return (
+                        <div key={i} className="space-y-1.5">
+                          <div className="flex items-center justify-between text-xs font-semibold">
+                            <span className="text-slate-300">{b.category}</span>
+                            <span className="text-slate-400">
+                              Đã chi <span className={textClass}>{b.spent_amount.toLocaleString()}đ</span> / {b.limit_amount.toLocaleString()}đ ({percent}%)
+                            </span>
+                          </div>
+                          <div className="h-2 w-full bg-slate-900 rounded-full overflow-hidden border border-white/5">
+                            <div className={`h-full rounded-full ${colorClass}`} style={{ width: `${percent}%` }} />
+                          </div>
                         </div>
-                        <div className="h-2 w-full bg-slate-900 rounded-full overflow-hidden border border-white/5">
-                          <div className={`h-full rounded-full ${colorClass}`} style={{ width: `${percent}%` }} />
-                        </div>
-                      </div>
-                    );
-                  })
-                ) : (
-                  <div className="text-center py-6 text-xs text-slate-500">
-                    Bạn chưa thiết lập hũ chi tiêu nào. Hãy vào tab <button onClick={() => setActiveTab("budgets")} className="text-indigo-400 hover:underline font-bold">Hạn mức ngân sách</button> để phân chia hũ tài chính ngay!
-                  </div>
-                )}
+                      );
+                    })
+                  ) : (
+                    <div className="text-center py-6 text-xs text-slate-500">
+                      Bạn chưa thiết lập hũ chi tiêu nào. Hãy vào tab <button onClick={() => setActiveTab("budgets")} className="text-indigo-400 hover:underline font-bold">Hạn mức ngân sách</button> để phân chia hũ tài chính ngay!
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Analytical Graphing Grids (Category + Forecast Charts) */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-              
+
               {/* Category Pie Recharts */}
               <div className="glass-card rounded-2xl p-6 border border-white/5 lg:col-span-5 flex flex-col justify-between">
                 <div>
-                  <h3 className="text-sm font-bold text-slate-300 mb-1">Cơ Cấu Chi Tiêu (AI Categorized)</h3>
-                  <p className="text-[11px] text-slate-500">Phân tích phân phối danh mục chi tiêu tự động</p>
+                  <h3 className="text-sm font-bold text-slate-300 mb-1">
+                    {overviewSubTab === "income" ? "Cơ Cấu Thu Nhập" : "Cơ Cấu Chi Tiêu"} (AI Categorized)
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    {overviewSubTab === "income" ? "Phân tích nguồn thu nhập tự động" : "Phân tích phân phối danh mục chi tiêu tự động"}
+                  </p>
                 </div>
-                
+
                 <div className="h-60 w-full relative mt-4 flex items-center justify-center">
-                  {getPieData().length > 0 ? (
+                  {getPieData(overviewSubTab === "income" ? "income" : "expense").length > 0 ? (
                     <ResponsiveContainer width="100%" height="100%">
                       <RechartsPieChart>
                         <Pie
-                          data={getPieData()}
+                          data={getPieData(overviewSubTab === "income" ? "income" : "expense")}
                           cx="50%"
                           cy="50%"
                           innerRadius={50}
@@ -970,23 +1161,25 @@ export default function Dashboard() {
                           paddingAngle={3}
                           dataKey="value"
                         >
-                          {getPieData().map((entry, index) => (
+                          {getPieData(overviewSubTab === "income" ? "income" : "expense").map((entry, index) => (
                             <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                           ))}
                         </Pie>
-                        <Tooltip 
-                          contentStyle={{ backgroundColor: "rgba(15, 23, 42, 0.95)", borderColor: "rgba(255,255,255,0.08)", color: "#fff", fontSize: "11px", borderRadius: "10px" }} 
+                        <Tooltip
+                          contentStyle={{ backgroundColor: "rgba(15, 23, 42, 0.95)", borderColor: "rgba(255,255,255,0.08)", color: "#fff", fontSize: "11px", borderRadius: "10px" }}
                           formatter={(value: any) => `${value.toLocaleString()} VND`}
                         />
                       </RechartsPieChart>
                     </ResponsiveContainer>
                   ) : (
-                    <span className="text-xs text-slate-500">Chưa ghi nhận chi tiêu</span>
+                    <span className="text-xs text-slate-500">
+                      {overviewSubTab === "income" ? "Chưa ghi nhận thu nhập" : "Chưa ghi nhận chi tiêu"}
+                    </span>
                   )}
                 </div>
 
                 <div className="grid grid-cols-3 gap-2 mt-4 text-[10px] text-slate-400">
-                  {getPieData().map((entry, index) => (
+                  {getPieData(overviewSubTab === "income" ? "income" : "expense").map((entry, index) => (
                     <div key={index} className="flex items-center gap-1">
                       <div className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: COLORS[index % COLORS.length] }} />
                       <span className="truncate">{entry.name}</span>
@@ -995,53 +1188,101 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              {/* Time Series Prophet Line Chart */}
-              <div className="glass-card rounded-2xl p-6 border border-white/5 lg:col-span-7 flex flex-col justify-between">
-                <div>
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-bold text-slate-300">Dự Báo Xu Hướng Chi Tiêu 30 Ngày Tiếp Theo</h3>
-                    <span className="bg-indigo-600/20 text-indigo-300 text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wide border border-indigo-500/20 flex items-center gap-1">
-                      <TrendingUp className="h-3 w-3 text-cyan-400" /> Prophet Engine Active
-                    </span>
+              {/* Time Series Prophet Line Chart or Savings Rate Analysis */}
+              {overviewSubTab === "income" ? (
+                /* Savings Rate Analysis & AI recommendation */
+                <div className="glass-card rounded-2xl p-6 border border-white/5 lg:col-span-7 flex flex-col justify-between">
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-300">Phân Tích Dòng Tiền & Tỷ Lệ Tiết Kiệm</h3>
+                    <p className="text-[11px] text-slate-500">Đánh giá tỷ lệ tích lũy của bạn dựa trên thu nhập và chi tiêu hiện tại</p>
                   </div>
-                  <p className="text-[11px] text-slate-500">Mô phỏng chuỗi thời gian dựa trên các giao dịch quá khứ và tính chu kỳ hàng tuần</p>
-                </div>
 
-                <div className="h-60 w-full mt-4">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={getForecastData()}>
-                      <defs>
-                        <linearGradient id="colorForecast" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#6366f1" stopOpacity={0.25}/>
-                          <stop offset="95%" stopColor="#6366f1" stopOpacity={0.0}/>
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.02)" />
-                      <XAxis dataKey="date" stroke="rgba(255,255,255,0.2)" fontSize={9} />
-                      <YAxis stroke="rgba(255,255,255,0.2)" fontSize={9} width={45} tickFormatter={(val: number) => `${val/1000}K`} />
-                      <Tooltip 
-                        contentStyle={{ backgroundColor: "rgba(15, 23, 42, 0.95)", borderColor: "rgba(255,255,255,0.08)", color: "#fff", fontSize: "11px", borderRadius: "10px" }}
-                        formatter={(val: any) => [`${val.toLocaleString()} VND`, "Dự đoán"]}
-                      />
-                      <Area type="monotone" dataKey="Dự đoán" stroke="#6366f1" strokeWidth={2} fillOpacity={1} fill="url(#colorForecast)" />
-                    </AreaChart>
-                  </ResponsiveContainer>
-                </div>
+                  <div className="space-y-6 my-auto pt-4">
+                    <div>
+                      <div className="flex justify-between text-xs font-semibold text-slate-300 mb-1.5">
+                        <span>Tỷ lệ tích lũy tích cực</span>
+                        <span className="text-emerald-400 font-extrabold">
+                          {displayIncome > 0 ? Math.max(0, Math.round(((displayIncome - totalExpense) / displayIncome) * 100)) : 0}%
+                        </span>
+                      </div>
+                      <div className="h-3 w-full bg-slate-950 rounded-full overflow-hidden border border-white/5">
+                        <div
+                          className="h-full bg-gradient-to-r from-indigo-500 to-emerald-500 transition-all duration-500"
+                          style={{ width: `${displayIncome > 0 ? Math.max(0, Math.min(100, Math.round(((displayIncome - totalExpense) / displayIncome) * 100))) : 0}%` }}
+                        />
+                      </div>
+                    </div>
 
-                <p className="text-[10px] text-slate-500 italic mt-2">📊 Ghi chú: Prophet dự báo các mốc cuối tuần sẽ tăng do có xu hướng giải trí dã ngoại tăng.</p>
-              </div>
+                    <div className="p-4 rounded-xl bg-slate-900/60 border border-white/5 space-y-2">
+                      <span className="text-xs font-bold text-indigo-400 flex items-center gap-1">
+                        <Sparkles className="h-3.5 w-3.5 text-cyan-400" /> Đánh giá từ Trợ lý Tài chính Aura AI:
+                      </span>
+                      <p className="text-[11px] text-slate-400 leading-relaxed">
+                        {displayIncome > 0 && ((displayIncome - totalExpense) / displayIncome) >= 0.5 ? (
+                          "Tuyệt vời! Bạn đang tiết kiệm được trên 50% thu nhập của mình. Đây là tỷ lệ cực kỳ lý tưởng để gia tăng quỹ đầu tư hoặc tiết kiệm dài hạn."
+                        ) : displayIncome > 0 && ((displayIncome - totalExpense) / displayIncome) >= 0.2 ? (
+                          "Tốt! Bạn đang đạt mức tiết kiệm tiêu chuẩn (20% - 50%). Hãy cố gắng duy trì thói quen này và phân bổ một phần vào các hũ đầu tư."
+                        ) : (
+                          "Cảnh báo: Tỷ lệ tiết kiệm của bạn dưới 20% hoặc tài khoản đang chi vượt thu. Hãy rà soát lại các hũ chi tiêu không thiết yếu (Giải trí, Mua sắm) để cân đối dòng tiền."
+                        )}
+                      </p>
+                    </div>
+                  </div>
+
+                  <p className="text-[10px] text-slate-500 italic">💡 Lời khuyên: Hãy tuân thủ quy tắc 50/30/20 bằng cách trích ít nhất 20% thu nhập cho mục tiêu tiết kiệm ngay khi nhận lương.</p>
+                </div>
+              ) : (
+                /* Time Series Prophet Line Chart */
+                <div className="glass-card rounded-2xl p-6 border border-white/5 lg:col-span-7 flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm font-bold text-slate-300">Dự Báo Xu Hướng Chi Tiêu 30 Ngày Tiếp Theo</h3>
+                      <span className="bg-indigo-600/20 text-indigo-300 text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wide border border-indigo-500/20 flex items-center gap-1">
+                        <TrendingUp className="h-3 w-3 text-cyan-400" /> Prophet Engine Active
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500">Mô phỏng chuỗi thời gian dựa trên các giao dịch quá khứ và tính chu kỳ hàng tuần</p>
+                  </div>
+
+                  <div className="h-60 w-full mt-4">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={getForecastData()}>
+                        <defs>
+                          <linearGradient id="colorForecast" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#6366f1" stopOpacity={0.25} />
+                            <stop offset="95%" stopColor="#6366f1" stopOpacity={0.0} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.02)" />
+                        <XAxis dataKey="date" stroke="rgba(255,255,255,0.2)" fontSize={9} />
+                        <YAxis stroke="rgba(255,255,255,0.2)" fontSize={9} width={45} tickFormatter={(val: number) => `${val / 1000}K`} />
+                        <Tooltip
+                          contentStyle={{ backgroundColor: "rgba(15, 23, 42, 0.95)", borderColor: "rgba(255,255,255,0.08)", color: "#fff", fontSize: "11px", borderRadius: "10px" }}
+                          formatter={(val: any) => [`${val.toLocaleString()} VND`, "Dự đoán"]}
+                        />
+                        <Area type="monotone" dataKey="Dự đoán" stroke="#6366f1" strokeWidth={2} fillOpacity={1} fill="url(#colorForecast)" />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+
+                  <p className="text-[10px] text-slate-500 italic mt-2">📊 Ghi chú: Prophet dự báo các mốc cuối tuần sẽ tăng do có xu hướng giải trí dã ngoại tăng.</p>
+                </div>
+              )}
 
             </div>
 
-            {/* Transactions Database Log list */}
+            {/* Transactions Database Log list (Mini Preview) */}
             <div className="glass-card rounded-2xl p-6 border border-white/5">
               <div className="flex items-center justify-between mb-6">
                 <div>
-                  <h3 className="text-sm font-bold text-slate-300">Lịch Sử Giao Dịch Gần Đây</h3>
-                  <p className="text-[11px] text-slate-500">Hiển thị lịch sử ghi nhận chi tiêu & thu nhập thực tế</p>
+                  <h3 className="text-sm font-bold text-slate-300">Giao Giao Dịch Gần Đây</h3>
+                  <p className="text-[11px] text-slate-500">Hiển thị 5 giao dịch ghi nhận mới nhất</p>
                 </div>
-                <button onClick={() => setTransactions(INITIAL_TRANSACTIONS)} className="text-xs text-slate-500 hover:text-indigo-400 transition-all flex items-center gap-1.5">
-                  <RefreshCw className="h-3 w-3" /> Reset dữ liệu
+                <button
+                  onClick={() => setActiveTab("history")}
+                  className="text-xs text-indigo-400 hover:text-indigo-300 font-bold transition-all flex items-center gap-1.5"
+                >
+                  Xem tất cả lịch sử →
                 </button>
               </div>
 
@@ -1052,36 +1293,24 @@ export default function Dashboard() {
                       <th className="pb-3 font-semibold">Mô tả</th>
                       <th className="pb-3 font-semibold">Ngày</th>
                       <th className="pb-3 font-semibold">Danh mục</th>
-                      <th className="pb-3 font-semibold">Cửa hàng</th>
                       <th className="pb-3 font-semibold text-right">Số tiền</th>
-                      <th className="pb-3 font-semibold text-center">Hành động</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/5">
-                    {transactions.map((tx) => (
+                    {transactions.slice(0, 5).map((tx) => (
                       <tr key={tx.id} className="hover:bg-white/[0.01] transition-all">
-                        <td className="py-4 font-bold text-slate-200">{tx.description}</td>
-                        <td className="py-4 text-slate-400">{tx.transaction_date}</td>
-                        <td className="py-4">
-                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
-                            tx.type === "income" 
-                              ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" 
+                        <td className="py-3 font-bold text-slate-200">{tx.description}</td>
+                        <td className="py-3 text-slate-400">{tx.transaction_date}</td>
+                        <td className="py-3">
+                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${tx.type === "income"
+                              ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
                               : "bg-indigo-500/10 text-indigo-300 border border-indigo-500/20"
-                          }`}>
+                            }`}>
                             {tx.category}
                           </span>
                         </td>
-                        <td className="py-4 text-slate-400">{tx.merchant_name || "-"}</td>
-                        <td className={`py-4 text-right font-extrabold ${tx.type === 'income' ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        <td className={`py-3 text-right font-extrabold ${tx.type === 'income' ? 'text-emerald-400' : 'text-rose-400'}`}>
                           {tx.type === 'income' ? '+' : '-'}{tx.amount.toLocaleString()}đ
-                        </td>
-                        <td className="py-4 text-center flex items-center justify-center gap-1">
-                          <button onClick={() => handleStartEdit(tx)} className="text-slate-500 hover:text-indigo-400 p-1.5 rounded-lg hover:bg-indigo-500/10 transition-all" title="Chỉnh sửa">
-                            <Edit className="h-4 w-4" />
-                          </button>
-                          <button onClick={() => handleDeleteTransaction(tx.id)} className="text-slate-500 hover:text-rose-500 p-1.5 rounded-lg hover:bg-rose-500/10 transition-all" title="Xóa">
-                            <Trash2 className="h-4 w-4" />
-                          </button>
                         </td>
                       </tr>
                     ))}
@@ -1090,6 +1319,173 @@ export default function Dashboard() {
               </div>
             </div>
 
+          </div>
+        )}
+
+        {/* TAB 6: FULL TRANSACTION HISTORY SCREEN */}
+        {activeTab === "history" && (
+          <div className="space-y-8">
+            {/* Header section */}
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+              <div>
+                <h2 className="text-2xl font-extrabold text-white flex items-center gap-2">
+                  Lịch Sử Giao Dịch Thu Chi <Clock className="h-5 w-5 text-indigo-400" />
+                </h2>
+                <p className="text-slate-400 text-sm mt-0.5">
+                  Quản lý và theo dõi toàn bộ các khoản chi tiêu & thu nhập thực tế
+                </p>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setTransactions(INITIAL_TRANSACTIONS)}
+                  className="px-4 py-2.5 rounded-xl text-xs font-bold bg-slate-900 border border-white/5 hover:border-white/10 hover:text-indigo-400 text-slate-400 transition-all flex items-center gap-1.5"
+                >
+                  <RefreshCw className="h-3 w-3" /> Reset dữ liệu mẫu
+                </button>
+                <button
+                  onClick={() => {
+                    setType("expense");
+                    setActiveTab("add");
+                  }}
+                  className="px-4 py-2.5 rounded-xl text-xs font-bold bg-indigo-600 text-white glow-indigo hover:bg-indigo-500 transition-all flex items-center gap-1.5"
+                >
+                  <Plus className="h-4 w-4" /> Thêm giao dịch
+                </button>
+              </div>
+            </div>
+
+            {/* Filtering Controls */}
+            <div className="glass-card rounded-2xl p-6 border border-white/5 space-y-4">
+              <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
+                {/* Search Bar */}
+                <div className="relative w-full md:w-80">
+                  <input
+                    type="text"
+                    placeholder="Tìm mô tả, danh mục, cửa hàng..."
+                    value={historySearch}
+                    onChange={(e) => setHistorySearch(e.target.value)}
+                    className="w-full bg-slate-950 border border-white/5 rounded-xl pl-10 pr-4 py-2.5 text-xs focus:outline-none focus:border-indigo-500 text-slate-200"
+                  />
+                  <div className="absolute left-3 top-3.5 text-slate-400">
+                    <Search className="h-4 w-4" />
+                  </div>
+                </div>
+
+                {/* Sub Tab Segmented Buttons */}
+                <div className="flex bg-slate-950 p-1 rounded-xl border border-white/5 w-full md:w-auto">
+                  <button
+                    onClick={() => setHistoryFilter("all")}
+                    className={`flex-1 md:flex-none px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+                      historyFilter === "all"
+                        ? "bg-indigo-600 text-white shadow-lg"
+                        : "text-slate-400 hover:text-slate-200"
+                    }`}
+                  >
+                    Tất cả ({transactions.length})
+                  </button>
+                  <button
+                    onClick={() => setHistoryFilter("income")}
+                    className={`flex-1 md:flex-none px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+                      historyFilter === "income"
+                        ? "bg-emerald-600 text-white shadow-lg"
+                        : "text-slate-400 hover:text-slate-200"
+                    }`}
+                  >
+                    Thu nhập ({transactions.filter(t => t.type === "income").length})
+                  </button>
+                  <button
+                    onClick={() => setHistoryFilter("expense")}
+                    className={`flex-1 md:flex-none px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+                      historyFilter === "expense"
+                        ? "bg-rose-600 text-white shadow-lg"
+                        : "text-slate-400 hover:text-slate-200"
+                    }`}
+                  >
+                    Chi tiêu ({transactions.filter(t => t.type === "expense").length})
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Transactions Database Table Card */}
+            <div className="glass-card rounded-2xl p-6 border border-white/5">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="border-b border-white/5 text-slate-500">
+                      <th className="pb-3 font-semibold">Mô tả</th>
+                      <th className="pb-3 font-semibold">Ngày thực hiện</th>
+                      <th className="pb-3 font-semibold">Danh mục</th>
+                      <th className="pb-3 font-semibold">Cửa hàng/Đơn vị</th>
+                      <th className="pb-3 font-semibold text-right">Số tiền</th>
+                      <th className="pb-3 font-semibold text-center">Hành động</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5">
+                    {transactions
+                      .filter((tx) => {
+                        // filter type
+                        if (historyFilter !== "all" && tx.type !== historyFilter) return false;
+                        // filter search
+                        if (historySearch) {
+                          const query = historySearch.toLowerCase();
+                          const desc = (tx.description || "").toLowerCase();
+                          const cat = (tx.category || "").toLowerCase();
+                          const merchant = (tx.merchant_name || "").toLowerCase();
+                          return desc.includes(query) || cat.includes(query) || merchant.includes(query);
+                        }
+                        return true;
+                      })
+                      .map((tx) => (
+                        <tr key={tx.id} className="hover:bg-white/[0.01] transition-all">
+                          <td className="py-4 font-bold text-slate-200">{tx.description}</td>
+                          <td className="py-4 text-slate-400">{tx.transaction_date}</td>
+                          <td className="py-4">
+                            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                              tx.type === "income"
+                                ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                                : "bg-indigo-500/10 text-indigo-300 border border-indigo-500/20"
+                            }`}>
+                              {tx.category}
+                            </span>
+                          </td>
+                          <td className="py-4 text-slate-400">{tx.merchant_name || "-"}</td>
+                          <td className={`py-4 text-right font-extrabold ${tx.type === 'income' ? 'text-emerald-400' : 'text-rose-400'}`}>
+                            {tx.type === 'income' ? '+' : '-'}{tx.amount.toLocaleString()}đ
+                          </td>
+                          <td className="py-4 text-center flex items-center justify-center gap-1">
+                            <button onClick={() => handleStartEdit(tx)} className="text-slate-500 hover:text-indigo-400 p-1.5 rounded-lg hover:bg-indigo-500/10 transition-all" title="Chỉnh sửa">
+                              <Edit className="h-4 w-4" />
+                            </button>
+                            <button onClick={() => handleDeleteTransaction(tx.id)} className="text-slate-500 hover:text-rose-500 p-1.5 rounded-lg hover:bg-rose-500/10 transition-all" title="Xóa">
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    {transactions
+                      .filter((tx) => {
+                        if (historyFilter !== "all" && tx.type !== historyFilter) return false;
+                        if (historySearch) {
+                          const query = historySearch.toLowerCase();
+                          const desc = (tx.description || "").toLowerCase();
+                          const cat = (tx.category || "").toLowerCase();
+                          const merchant = (tx.merchant_name || "").toLowerCase();
+                          return desc.includes(query) || cat.includes(query) || merchant.includes(query);
+                        }
+                        return true;
+                      }).length === 0 && (
+                        <tr>
+                          <td colSpan={6} className="py-8 text-center text-slate-500 text-xs">
+                            Không tìm thấy giao dịch nào khớp với bộ lọc.
+                          </td>
+                        </tr>
+                      )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         )}
 
@@ -1104,13 +1500,13 @@ export default function Dashboard() {
             </div>
 
             <form onSubmit={handleSaveTransaction} className="space-y-5">
-              
+
               <div className="grid grid-cols-2 gap-4">
                 {/* Type Choice */}
                 <div>
                   <label className="text-xs text-slate-400 font-semibold block mb-2">Loại giao dịch</label>
-                  <select 
-                    value={type} 
+                  <select
+                    value={type}
                     onChange={(e: any) => setType(e.target.value)}
                     className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500 text-white font-bold"
                   >
@@ -1118,11 +1514,11 @@ export default function Dashboard() {
                     <option value="income">Khoản Thu Nhập (+)</option>
                   </select>
                 </div>
-                
+
                 {/* Date */}
                 <div>
                   <label className="text-xs text-slate-400 font-semibold block mb-2">Ngày thực hiện</label>
-                  <input 
+                  <input
                     type="date"
                     value={transactionDate}
                     onChange={(e) => setTransactionDate(e.target.value)}
@@ -1135,7 +1531,7 @@ export default function Dashboard() {
               {/* Amount */}
               <div>
                 <label className="text-xs text-slate-400 font-semibold block mb-2">Số tiền giao dịch (VND)</label>
-                <input 
+                <input
                   type="text"
                   placeholder="Ví dụ: 85.000"
                   value={amount}
@@ -1148,7 +1544,7 @@ export default function Dashboard() {
               {/* Description & AI Predict */}
               <div className="relative">
                 <label className="text-xs text-slate-400 font-semibold block mb-2">Mô tả giao dịch</label>
-                <input 
+                <input
                   type="text"
                   placeholder="Ví dụ: tra sua gongcha size L, di grab taxi ve nha..."
                   value={description}
@@ -1156,7 +1552,7 @@ export default function Dashboard() {
                   className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500 text-white font-medium"
                   required
                 />
-                
+
                 {/* AI suggestion badge */}
                 {aiSuggestion && (
                   <div className="mt-2.5 flex items-center gap-1.5 text-xs text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 px-3 py-1.5 rounded-xl w-fit font-semibold tracking-wide">
@@ -1172,7 +1568,7 @@ export default function Dashboard() {
                   <label className="text-xs text-slate-400 font-semibold">Danh mục chi tiêu</label>
                   <span className="text-[10px] text-slate-500">Mặc định Other để dùng gợi ý AI</span>
                 </div>
-                <select 
+                <select
                   value={category}
                   onChange={(e) => setCategory(e.target.value)}
                   className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500 text-white"
@@ -1190,7 +1586,7 @@ export default function Dashboard() {
               {/* Merchant Store */}
               <div>
                 <label className="text-xs text-slate-400 font-semibold block mb-2">Cửa hàng / Đối tác (Không bắt buộc)</label>
-                <input 
+                <input
                   type="text"
                   placeholder="Ví dụ: Highlands Coffee, Shopee..."
                   value={merchant}
@@ -1216,7 +1612,7 @@ export default function Dashboard() {
         {/* TAB 3: AI BILL OCR - RECONCILIATION SPLIT-SCREEN WORKFLOW */}
         {activeTab === "ocr" && (
           <div className="max-w-6xl mx-auto space-y-8">
-            
+
             <div className="text-center space-y-2">
               <span className="bg-gradient-to-r from-indigo-500 to-cyan-400 text-white text-[10px] px-3 py-1 rounded-full font-bold uppercase tracking-wider glow-indigo">AI Computer Vision & LayoutLMv3</span>
               <h2 className="text-2xl font-extrabold text-white">Quét Hóa Đơn Chi Tiêu Thông Minh</h2>
@@ -1233,15 +1629,14 @@ export default function Dashboard() {
 
             {/* Drag & Drop Upload Zone (Visible when not succeeded yet) */}
             {!ocrSuccess && (
-              <div 
+              <div
                 onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
                 onDragLeave={() => setDragActive(false)}
                 onDrop={(e) => { e.preventDefault(); setDragActive(false); handleOcrFileSubmit(e.dataTransfer.files); }}
-                className={`border-2 border-dashed rounded-2xl p-10 text-center transition-all duration-300 relative overflow-hidden flex flex-col items-center justify-center min-h-60 max-w-3xl mx-auto ${
-                  dragActive 
-                    ? "border-indigo-500 bg-indigo-500/10" 
+                className={`border-2 border-dashed rounded-2xl p-10 text-center transition-all duration-300 relative overflow-hidden flex flex-col items-center justify-center min-h-60 max-w-3xl mx-auto ${dragActive
+                    ? "border-indigo-500 bg-indigo-500/10"
                     : "border-white/10 bg-slate-950/20 hover:border-indigo-500/30 hover:bg-slate-950/40"
-                }`}
+                  }`}
               >
                 {ocrLoading ? (
                   <div className="space-y-4">
@@ -1259,15 +1654,15 @@ export default function Dashboard() {
                     <div className="h-12 w-12 rounded-xl bg-indigo-500/10 border border-indigo-500/25 flex items-center justify-center text-indigo-400">
                       <UploadCloud className="h-6 w-6" />
                     </div>
-                    
+
                     <div>
                       <label className="cursor-pointer">
                         <span className="text-sm font-bold text-indigo-400 hover:underline">Click để chọn file ảnh hóa đơn</span>
-                        <input 
-                          type="file" 
-                          className="hidden" 
+                        <input
+                          type="file"
+                          className="hidden"
                           accept="image/*"
-                          onChange={(e) => handleOcrFileSubmit(e.target.files)} 
+                          onChange={(e) => handleOcrFileSubmit(e.target.files)}
                         />
                       </label>
                       <p className="text-xs text-slate-500 mt-1">hoặc kéo thả ảnh biên lai (JPEG, PNG, WebP) vào đây</p>
@@ -1291,7 +1686,7 @@ export default function Dashboard() {
                       <div className="mt-3 p-3.5 rounded-xl bg-slate-950/60 border border-white/5 space-y-2 text-[11px]">
                         <p className="font-bold text-slate-300">Để kích hoạt mô hình LayoutLMv3 đã train của bạn từ Google Colab:</p>
                         <ol className="list-decimal pl-4 space-y-1.5 text-slate-400">
-                          <li>Cài đặt các gói AI trên máy tính cục bộ: 
+                          <li>Cài đặt các gói AI trên máy tính cục bộ:
                             <code className="bg-slate-900 text-indigo-300 px-1.5 py-0.5 rounded ml-1 font-mono">pip install torch transformers paddleocr pillow</code>
                           </li>
                           <li>Tải thư mục trọng số của mô hình LayoutLMv3 đã huấn luyện từ Colab/Drive về máy.</li>
@@ -1303,210 +1698,212 @@ export default function Dashboard() {
                     </div>
                   </div>
                 )}
-                
+
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-                
-                {/* COLUMN 1: Bill image original preview & raw text logs */}
-                <div className="lg:col-span-5 space-y-6">
-                  {/* Image Card Container */}
-                  <div className="glass-card rounded-2xl p-6 border border-white/5 space-y-4">
-                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
-                      <FileText className="h-4.5 w-4.5 text-indigo-400" /> Ảnh Biên Lai Gốc
-                    </h3>
-                    
-                    <div className="relative aspect-[3/4] max-h-[460px] w-full rounded-xl overflow-hidden bg-slate-950 border border-white/5 flex items-center justify-center group shadow-2xl">
-                      {ocrPreviewUrl ? (
-                        <img 
-                          src={ocrPreviewUrl} 
-                          alt="Scanned Bill Receipt" 
-                          className="h-full w-full object-contain transition-transform duration-300 hover:scale-105"
-                        />
-                      ) : ocrExtractedData.image_url ? (
-                        <img 
-                          src={`http://localhost:8000${ocrExtractedData.image_url}`} 
-                          alt="Scanned Bill Receipt" 
-                          className="h-full w-full object-contain transition-transform duration-300 hover:scale-105"
-                        />
-                      ) : (
-                        <div className="text-slate-500 text-xs flex flex-col items-center gap-2">
-                          <AlertTriangle className="h-6 w-6 text-amber-500" />
-                          Không có ảnh hóa đơn để xem trước
+
+                  {/* COLUMN 1: Bill image original preview & raw text logs */}
+                  <div className="lg:col-span-5 space-y-6">
+                    {/* Image Card Container */}
+                    <div className="glass-card rounded-2xl p-6 border border-white/5 space-y-4">
+                      <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
+                        <FileText className="h-4.5 w-4.5 text-indigo-400" /> Ảnh Biên Lai Gốc
+                      </h3>
+
+                      <div className="relative aspect-[3/4] max-h-[460px] w-full rounded-xl overflow-hidden bg-slate-950 border border-white/5 flex items-center justify-center group shadow-2xl">
+                        {ocrPreviewUrl ? (
+                          <img
+                            src={ocrPreviewUrl}
+                            alt="Scanned Bill Receipt"
+                            className="h-full w-full object-contain transition-transform duration-300 hover:scale-105"
+                          />
+                        ) : ocrExtractedData.image_url ? (
+                          <img
+                            src={`http://localhost:8000${ocrExtractedData.image_url}`}
+                            alt="Scanned Bill Receipt"
+                            className="h-full w-full object-contain transition-transform duration-300 hover:scale-105"
+                          />
+                        ) : (
+                          <div className="text-slate-500 text-xs flex flex-col items-center gap-2">
+                            <AlertTriangle className="h-6 w-6 text-amber-500" />
+                            Không có ảnh hóa đơn để xem trước
+                          </div>
+                        )}
+                        <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end justify-center pb-4 pointer-events-none">
+                          <span className="text-[10px] text-slate-300 font-semibold">Hover phóng to ảnh để đối chiếu</span>
                         </div>
-                      )}
-                      <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end justify-center pb-4 pointer-events-none">
-                        <span className="text-[10px] text-slate-300 font-semibold">Hover phóng to ảnh để đối chiếu</span>
                       </div>
                     </div>
-                  </div>
 
-                  {/* Raw Text Logs Container */}
-                  <div className="glass-card rounded-2xl p-5 border border-white/5 space-y-3">
-                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Văn Bản Thô OCR Trích Xuất</h3>
-                    <div className="p-3.5 rounded-xl bg-slate-950 font-mono text-[9px] text-indigo-300 whitespace-pre-line border border-indigo-500/10 max-h-40 overflow-y-auto leading-relaxed">
-                      {ocrExtractedData.extracted_text}
+                    {/* Raw Text Logs Container */}
+                    <div className="glass-card rounded-2xl p-5 border border-white/5 space-y-3">
+                      <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Văn Bản Thô OCR Trích Xuất</h3>
+                      <div className="p-3.5 rounded-xl bg-slate-950 font-mono text-[9px] text-indigo-300 whitespace-pre-line border border-indigo-500/10 max-h-40 overflow-y-auto leading-relaxed">
+                        {ocrExtractedData.extracted_text}
+                      </div>
+                      <span className="text-[10px] text-slate-500 italic block">Công nghệ OCR trích xuất hộp chữ tọa độ 2D</span>
                     </div>
-                    <span className="text-[10px] text-slate-500 italic block">Công nghệ OCR trích xuất hộp chữ tọa độ 2D</span>
-                  </div>
-                </div>
-
-                {/* COLUMN 2: Pre-populated Transaction form editable */}
-                <div className="lg:col-span-7 glass-card rounded-2xl p-6 border border-white/5 space-y-6">
-                  <div>
-                    <h3 className="text-sm font-bold text-white flex items-center gap-1.5">
-                      <Sparkles className="h-4.5 w-4.5 text-cyan-400" /> Form Chỉnh Sửa & Ghi Nhận
-                    </h3>
-                    <p className="text-[11px] text-slate-400 mt-1">Dữ liệu được trích xuất tự động bằng mô hình AI. Bạn có thể kiểm tra chéo với ảnh bên trái và điều chỉnh các ô nhập bên dưới trước khi lưu.</p>
                   </div>
 
-                  <form 
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      const rawAmount = Number(cleanVNDString(amount));
-                      if (!rawAmount || isNaN(rawAmount)) return;
+                  {/* COLUMN 2: Pre-populated Transaction form editable */}
+                  <div className="lg:col-span-7 glass-card rounded-2xl p-6 border border-white/5 space-y-6">
+                    <div>
+                      <h3 className="text-sm font-bold text-white flex items-center gap-1.5">
+                        <Sparkles className="h-4.5 w-4.5 text-cyan-400" /> Form Chỉnh Sửa & Ghi Nhận
+                      </h3>
+                      <p className="text-[11px] text-slate-400 mt-1">Dữ liệu được trích xuất tự động bằng mô hình AI. Bạn có thể kiểm tra chéo với ảnh bên trái và điều chỉnh các ô nhập bên dưới trước khi lưu.</p>
+                    </div>
 
-                      // Save OCR transaction to backend
-                      api.createTransaction({
-                        amount: rawAmount,
-                        type: "expense",
-                        category: category,
-                        description: description || `Quét hóa đơn ${merchant}`,
-                        transaction_date: transactionDate,
-                        merchant_name: merchant || undefined,
-                        ocr_log_id: ocrExtractedData?.ocr_log_id
-                      })
-                        .then(savedTx => {
-                          setTransactions(prev => [savedTx, ...prev]);
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        const rawAmount = Number(cleanVNDString(amount));
+                        if (!rawAmount || isNaN(rawAmount)) return;
 
-                          // Update budget limits on the fly!
-                          setBudgets(prev => prev.map(b => {
-                            if (b.category === category) {
-                              return { ...b, spent_amount: b.spent_amount + rawAmount };
-                            }
-                            return b;
-                          }));
+                        // Save OCR transaction to backend
+                        api.createTransaction({
+                          amount: rawAmount,
+                          type: "expense",
+                          category: category,
+                          description: description || `Quét hóa đơn ${merchant}`,
+                          transaction_date: transactionDate,
+                          merchant_name: merchant || undefined,
+                          ocr_log_id: ocrExtractedData?.ocr_log_id
                         })
-                        .catch(err => {
-                          console.error("Failed to save OCR transaction:", err);
-                          // Local only fallback
-                          const newTx: Transaction = {
-                            id: Date.now().toString(),
-                            amount: rawAmount,
-                            type: "expense",
-                            category: category,
-                            description: description || `Quét hóa đơn ${merchant}`,
-                            transaction_date: transactionDate,
-                            merchant_name: merchant || undefined
-                          };
-                          setTransactions(prev => [newTx, ...prev]);
-                        });
+                          .then(savedTx => {
+                            setTransactions(prev => [savedTx, ...prev]);
 
-                      // Reset scanner states
-                      setOcrSuccess(false);
-                      setOcrExtractedData(null);
-                      setOcrPreviewUrl(null);
-                      setOcrError(null);
+                            // Update budget limits on the fly!
+                            setBudgets(prev => prev.map(b => {
+                              if (b.category === category) {
+                                return { ...b, spent_amount: b.spent_amount + rawAmount };
+                              }
+                              return b;
+                            }));
+                            mutate("transactions");
+                            mutate("budgets");
+                          })
+                          .catch(err => {
+                            console.error("Failed to save OCR transaction:", err);
+                            // Local only fallback
+                            const newTx: Transaction = {
+                              id: Date.now().toString(),
+                              amount: rawAmount,
+                              type: "expense",
+                              category: category,
+                              description: description || `Quét hóa đơn ${merchant}`,
+                              transaction_date: transactionDate,
+                              merchant_name: merchant || undefined
+                            };
+                            setTransactions(prev => [newTx, ...prev]);
+                          });
 
-                      // Redirect to dashboard overview
-                      setActiveTab("overview");
-                    }} 
-                    className="space-y-4 text-xs"
-                  >
-                    
-                    {/* Store Name / Merchant */}
-                    <div>
-                      <label className="text-slate-400 block mb-1.5 font-bold">Cửa hàng / Đối tác (Merchant)</label>
-                      <input 
-                        type="text"
-                        value={merchant}
-                        onChange={(e) => setMerchant(e.target.value)}
-                        className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3 font-semibold text-white focus:outline-none focus:border-indigo-500"
-                        placeholder="Ví dụ: Highlands Coffee, WinMart..."
-                        required
-                      />
-                    </div>
+                        // Reset scanner states
+                        setOcrSuccess(false);
+                        setOcrExtractedData(null);
+                        setOcrPreviewUrl(null);
+                        setOcrError(null);
 
-                    {/* Total Amount */}
-                    <div>
-                      <label className="text-slate-400 block mb-1.5 font-bold">Tổng số tiền giao dịch (VND)</label>
-                      <input 
-                        type="text"
-                        value={amount}
-                        onChange={(e) => setAmount(formatVNDString(e.target.value))}
-                        className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3 font-extrabold text-emerald-400 focus:outline-none focus:border-indigo-500 text-sm"
-                        placeholder="Ví dụ: 85.000"
-                        required
-                      />
-                    </div>
+                        // Redirect to dashboard overview
+                        setActiveTab("overview");
+                      }}
+                      className="space-y-4 text-xs"
+                    >
 
-                    {/* Category Selector */}
-                    <div>
-                      <label className="text-slate-400 block mb-1.5 font-bold">Danh mục chi tiêu (AI Gợi Ý: {ocrExtractedData.category})</label>
-                      <select 
-                        value={category}
-                        onChange={(e) => setCategory(e.target.value)}
-                        className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3 text-slate-300 focus:outline-none focus:border-indigo-500"
-                      >
-                        <option value="Food & Beverage">Food & Beverage (Ăn uống)</option>
-                        <option value="Transportation">Transportation (Di chuyển)</option>
-                        <option value="Shopping">Shopping (Mua sắm)</option>
-                        <option value="Bills & Utilities">Bills & Utilities (Hóa đơn)</option>
-                        <option value="Entertainment">Entertainment (Giải trí)</option>
-                        <option value="Other">Other (Khác)</option>
-                      </select>
-                    </div>
+                      {/* Store Name / Merchant */}
+                      <div>
+                        <label className="text-slate-400 block mb-1.5 font-bold">Cửa hàng / Đối tác (Merchant)</label>
+                        <input
+                          type="text"
+                          value={merchant}
+                          onChange={(e) => setMerchant(e.target.value)}
+                          className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3 font-semibold text-white focus:outline-none focus:border-indigo-500"
+                          placeholder="Ví dụ: Highlands Coffee, WinMart..."
+                          required
+                        />
+                      </div>
 
-                    {/* Transaction Date */}
-                    <div>
-                      <label className="text-slate-400 block mb-1.5 font-bold">Ngày ghi nhận</label>
-                      <input 
-                        type="date"
-                        value={transactionDate}
-                        onChange={(e) => setTransactionDate(e.target.value)}
-                        className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-indigo-500"
-                        required
-                      />
-                    </div>
+                      {/* Total Amount */}
+                      <div>
+                        <label className="text-slate-400 block mb-1.5 font-bold">Tổng số tiền giao dịch (VND)</label>
+                        <input
+                          type="text"
+                          value={amount}
+                          onChange={(e) => setAmount(formatVNDString(e.target.value))}
+                          className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3 font-extrabold text-emerald-400 focus:outline-none focus:border-indigo-500 text-sm"
+                          placeholder="Ví dụ: 85.000"
+                          required
+                        />
+                      </div>
 
-                    {/* Description Note */}
-                    <div>
-                      <label className="text-slate-400 block mb-1.5 font-bold">Mô tả / Ghi chú</label>
-                      <input 
-                        type="text"
-                        value={description}
-                        onChange={(e) => setDescription(e.target.value)}
-                        className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3 text-slate-300 focus:outline-none focus:border-indigo-500"
-                        placeholder="Nội dung chi tiêu..."
-                      />
-                    </div>
+                      {/* Category Selector */}
+                      <div>
+                        <label className="text-slate-400 block mb-1.5 font-bold">Danh mục chi tiêu (AI Gợi Ý: {ocrExtractedData.category})</label>
+                        <select
+                          value={category}
+                          onChange={(e) => setCategory(e.target.value)}
+                          className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3 text-slate-300 focus:outline-none focus:border-indigo-500"
+                        >
+                          <option value="Food & Beverage">Food & Beverage (Ăn uống)</option>
+                          <option value="Transportation">Transportation (Di chuyển)</option>
+                          <option value="Shopping">Shopping (Mua sắm)</option>
+                          <option value="Bills & Utilities">Bills & Utilities (Hóa đơn)</option>
+                          <option value="Entertainment">Entertainment (Giải trí)</option>
+                          <option value="Other">Other (Khác)</option>
+                        </select>
+                      </div>
 
-                    {/* Submit and Cancel Buttons */}
-                    <div className="pt-4 flex gap-4">
-                      <button 
-                        type="submit" 
-                        className="flex-1 py-3.5 rounded-xl bg-gradient-to-r from-emerald-600 to-indigo-600 hover:from-emerald-500 hover:to-indigo-500 text-white text-xs font-bold transition-all glow-indigo"
-                      >
-                        Lưu Khoản Chi & Đóng Form
-                      </button>
-                      <button 
-                        type="button" 
-                        onClick={() => {
-                          setOcrSuccess(false);
-                          setOcrExtractedData(null);
-                          setOcrPreviewUrl(null);
-                          setOcrError(null);
-                        }} 
-                        className="px-5 py-3.5 rounded-xl bg-slate-900 border border-white/5 hover:border-white/10 text-slate-400 text-xs font-bold transition-all"
-                      >
-                        Hủy & Quét lại
-                      </button>
-                    </div>
+                      {/* Transaction Date */}
+                      <div>
+                        <label className="text-slate-400 block mb-1.5 font-bold">Ngày ghi nhận</label>
+                        <input
+                          type="date"
+                          value={transactionDate}
+                          onChange={(e) => setTransactionDate(e.target.value)}
+                          className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-indigo-500"
+                          required
+                        />
+                      </div>
 
-                  </form>
+                      {/* Description Note */}
+                      <div>
+                        <label className="text-slate-400 block mb-1.5 font-bold">Mô tả / Ghi chú</label>
+                        <input
+                          type="text"
+                          value={description}
+                          onChange={(e) => setDescription(e.target.value)}
+                          className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3 text-slate-300 focus:outline-none focus:border-indigo-500"
+                          placeholder="Nội dung chi tiêu..."
+                        />
+                      </div>
+
+                      {/* Submit and Cancel Buttons */}
+                      <div className="pt-4 flex gap-4">
+                        <button
+                          type="submit"
+                          className="flex-1 py-3.5 rounded-xl bg-gradient-to-r from-emerald-600 to-indigo-600 hover:from-emerald-500 hover:to-indigo-500 text-white text-xs font-bold transition-all glow-indigo"
+                        >
+                          Lưu Khoản Chi & Đóng Form
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setOcrSuccess(false);
+                            setOcrExtractedData(null);
+                            setOcrPreviewUrl(null);
+                            setOcrError(null);
+                          }}
+                          className="px-5 py-3.5 rounded-xl bg-slate-900 border border-white/5 hover:border-white/10 text-slate-400 text-xs font-bold transition-all"
+                        >
+                          Hủy & Quét lại
+                        </button>
+                      </div>
+
+                    </form>
+                  </div>
+
                 </div>
-
               </div>
-            </div>
-          )}
+            )}
 
             {/* AI Developers tip */}
             <div className="p-5 rounded-2xl bg-indigo-950/20 border border-indigo-500/20 flex gap-3 text-xs text-indigo-300 max-w-4xl mx-auto">
@@ -1525,7 +1922,7 @@ export default function Dashboard() {
         {/* TAB 4: BUDGET MANAGEMENT */}
         {activeTab === "budgets" && (() => {
           const totalPercent = Object.values(jarPercentages).reduce((a, b) => a + b, 0);
-          
+
           const applyPreset503020 = () => {
             setJarPercentages({
               "Food & Beverage": 30,
@@ -1557,7 +1954,7 @@ export default function Dashboard() {
 
           const handleSaveJars = () => {
             if (totalPercent !== 100) return;
-            
+
             const promises = Object.entries(jarPercentages).map(([cat, pct]) => {
               const limit = Math.round((pct / 100) * monthlyIncome);
               return api.createOrUpdateBudget({
@@ -1580,6 +1977,7 @@ export default function Dashboard() {
                     };
                   });
                 });
+                mutate("budgets");
                 alert("Phân chia hũ ngân sách thành công!");
               })
               .catch(err => {
@@ -1615,9 +2013,9 @@ export default function Dashboard() {
                     <h3 className="text-sm font-bold text-slate-300">1. Nhập Tổng Thu Nhập / Lương</h3>
                     <p className="text-[10px] text-slate-500 mt-0.5">Số tiền nền tảng để chia tỷ lệ phần trăm các hũ</p>
                     <div className="mt-3 relative">
-                      <input 
-                        type="text" 
-                        value={formatVNDString(monthlyIncome)} 
+                      <input
+                        type="text"
+                        value={formatVNDString(monthlyIncome)}
                         onChange={(e) => setMonthlyIncome(Number(cleanVNDString(e.target.value)) || 0)}
                         className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3 text-sm text-emerald-400 font-extrabold focus:outline-none focus:border-indigo-500"
                         placeholder="Ví dụ: 15.000.000"
@@ -1630,13 +2028,13 @@ export default function Dashboard() {
                   <div className="space-y-2">
                     <label className="text-[11px] text-slate-400 font-bold block">2. Chọn quy tắc chia hũ nhanh</label>
                     <div className="grid grid-cols-2 gap-3">
-                      <button 
+                      <button
                         onClick={applyPreset503020}
                         className="py-2.5 rounded-xl bg-slate-900 border border-white/5 hover:border-indigo-500/30 text-[10px] text-slate-300 font-bold transition-all hover:bg-slate-950"
                       >
                         Quy tắc 50 / 30 / 20
                       </button>
-                      <button 
+                      <button
                         onClick={applyPreset6Jars}
                         className="py-2.5 rounded-xl bg-slate-900 border border-white/5 hover:border-indigo-500/30 text-[10px] text-slate-300 font-bold transition-all hover:bg-slate-950"
                       >
@@ -1671,7 +2069,7 @@ export default function Dashboard() {
                               <span className="font-bold text-slate-300">{name}</span>
                               <span className="font-extrabold text-indigo-400">{pct}% <span className="text-[10px] text-slate-500">({amount.toLocaleString()}đ)</span></span>
                             </div>
-                            <input 
+                            <input
                               type="range"
                               min="0"
                               max="100"
@@ -1687,7 +2085,7 @@ export default function Dashboard() {
                   </div>
 
                   {/* SAVE ALLOCATION BUTTON */}
-                  <button 
+                  <button
                     onClick={handleSaveJars}
                     disabled={totalPercent !== 100}
                     className="w-full py-3.5 rounded-xl bg-gradient-to-r from-indigo-600 to-cyan-500 hover:from-indigo-500 hover:to-cyan-400 text-white text-xs font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed glow-indigo"
@@ -1701,7 +2099,7 @@ export default function Dashboard() {
                   <div className="glass-card rounded-2xl p-6 border border-white/5 space-y-4">
                     <h3 className="text-sm font-bold text-slate-300">Tổng Quan Hũ Ngân Sách</h3>
                     <p className="text-[10px] text-slate-500">Tiến độ chi tiêu thực tế của các hũ so với hạn mức</p>
-                    
+
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       {Object.entries(jarPercentages).map(([cat, pct]) => {
                         const limit = Math.round((pct / 100) * monthlyIncome);
@@ -1739,7 +2137,7 @@ export default function Dashboard() {
                                 <span>{percent}%</span>
                               </div>
                               <div className="h-1.5 w-full bg-slate-950 rounded-full overflow-hidden">
-                                <div 
+                                <div
                                   className={`h-full rounded-full bg-gradient-to-r ${colorClass}`}
                                   style={{ width: `${percent}%` }}
                                 />
@@ -1773,7 +2171,7 @@ export default function Dashboard() {
               <p className="text-slate-400 text-xs mt-1">Vui lòng điền thông tin bên dưới để đổi mật khẩu truy cập của bạn.</p>
             </div>
 
-            <form 
+            <form
               onSubmit={async (e) => {
                 e.preventDefault();
                 setSecurityError(null);
@@ -1815,44 +2213,44 @@ export default function Dashboard() {
               {/* Old Password */}
               <div className="space-y-1">
                 <label className="text-xs text-slate-400 font-semibold block">Mật khẩu cũ</label>
-                <input 
-                  type="password" 
-                  value={oldPassword} 
-                  onChange={(e) => setOldPassword(e.target.value)} 
-                  className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3 text-xs text-white" 
-                  required 
+                <input
+                  type="password"
+                  value={oldPassword}
+                  onChange={(e) => setOldPassword(e.target.value)}
+                  className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3 text-xs text-white"
+                  required
                 />
               </div>
 
               {/* New Password */}
               <div className="space-y-1">
                 <label className="text-xs text-slate-400 font-semibold block">Mật khẩu mới (tối thiểu 6 ký tự)</label>
-                <input 
-                  type="password" 
-                  value={newPassword} 
-                  onChange={(e) => setNewPassword(e.target.value)} 
-                  className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3 text-xs text-white" 
-                  minLength={6} 
-                  required 
+                <input
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3 text-xs text-white"
+                  minLength={6}
+                  required
                 />
               </div>
 
               {/* Confirm Password */}
               <div className="space-y-1">
                 <label className="text-xs text-slate-400 font-semibold block">Xác nhận mật khẩu mới</label>
-                <input 
-                  type="password" 
-                  value={confirmPassword} 
-                  onChange={(e) => setConfirmPassword(e.target.value)} 
-                  className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3 text-xs text-white" 
-                  minLength={6} 
-                  required 
+                <input
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3 text-xs text-white"
+                  minLength={6}
+                  required
                 />
               </div>
 
               {/* Actions */}
-              <button 
-                type="submit" 
+              <button
+                type="submit"
                 disabled={securityLoading}
                 className="w-full py-3.5 rounded-xl bg-gradient-to-r from-indigo-600 to-cyan-500 text-white text-xs font-bold transition-all glow-indigo flex items-center justify-center gap-2"
               >
@@ -1891,7 +2289,7 @@ export default function Dashboard() {
               <div className="flex items-center gap-1.5">
                 {chatView === "chat" ? (
                   <>
-                    <button 
+                    <button
                       onClick={handleEndChat}
                       disabled={chatMessages.length <= 1}
                       title="Kết thúc & Lưu cuộc trò chuyện"
@@ -1899,7 +2297,7 @@ export default function Dashboard() {
                     >
                       Kết thúc
                     </button>
-                    <button 
+                    <button
                       onClick={() => setChatView("history")}
                       title="Xem lịch sử trò chuyện"
                       className="text-slate-400 hover:text-white transition-colors p-1 rounded-lg hover:bg-white/5"
@@ -1908,14 +2306,14 @@ export default function Dashboard() {
                     </button>
                   </>
                 ) : (
-                  <button 
+                  <button
                     onClick={() => setChatView("chat")}
                     className="text-[9px] text-indigo-300 hover:text-indigo-200 font-bold border border-indigo-500/20 hover:border-indigo-500/40 bg-indigo-950/30 px-2 py-1 rounded-lg transition-all duration-200"
                   >
                     Quay lại
                   </button>
                 )}
-                <button 
+                <button
                   onClick={() => setIsChatOpen(false)}
                   className="text-slate-400 hover:text-white transition-colors p-1 rounded-lg hover:bg-white/5"
                 >
@@ -1930,16 +2328,15 @@ export default function Dashboard() {
                 <div className="flex-1 p-4 overflow-y-auto space-y-4 scrollbar-thin">
                   {chatMessages.map((msg, index) => (
                     <div key={index} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-                      <div className={`max-w-[85%] rounded-2xl p-3 text-xs leading-relaxed ${
-                        msg.role === "user" 
+                      <div className={`max-w-[85%] rounded-2xl p-3 text-xs leading-relaxed ${msg.role === "user"
                           ? "bg-gradient-to-r from-indigo-600 to-cyan-500 text-white font-medium rounded-tr-none shadow-md"
                           : "bg-slate-900 border border-white/5 text-slate-300 rounded-tl-none"
-                      }`}>
+                        }`}>
                         {renderMessageContent(msg.content)}
                       </div>
                     </div>
                   ))}
-                  
+
                   {/* Chat Loading State */}
                   {chatLoading && (
                     <div className="flex justify-start">
@@ -1971,7 +2368,7 @@ export default function Dashboard() {
                 )}
 
                 {/* Input Form */}
-                <form 
+                <form
                   onSubmit={(e) => { e.preventDefault(); handleSendChatMessage(); }}
                   className="p-3 bg-slate-950 border-t border-white/10 flex gap-2"
                 >
@@ -2002,18 +2399,17 @@ export default function Dashboard() {
                     </div>
                   ) : (
                     pastChats.map((chat) => (
-                      <div 
-                        key={chat.id} 
+                      <div
+                        key={chat.id}
                         onClick={() => handleViewPastChat(chat)}
-                        className={`p-3 rounded-xl border border-white/5 bg-slate-900/40 hover:bg-slate-900/80 cursor-pointer transition-all duration-200 flex justify-between items-center group ${
-                          activeChatId === chat.id ? "border-indigo-500/40 bg-indigo-950/10" : ""
-                        }`}
+                        className={`p-3 rounded-xl border border-white/5 bg-slate-900/40 hover:bg-slate-900/80 cursor-pointer transition-all duration-200 flex justify-between items-center group ${activeChatId === chat.id ? "border-indigo-500/40 bg-indigo-950/10" : ""
+                          }`}
                       >
                         <div className="flex-1 min-w-0 pr-2">
                           <h5 className="text-xs font-bold text-white truncate">{chat.title}</h5>
                           <span className="text-[9px] text-slate-500 block mt-1">{chat.createdAt}</span>
                         </div>
-                        <button 
+                        <button
                           onClick={(e) => handleDeletePastChat(chat.id, e)}
                           title="Xóa cuộc trò chuyện này"
                           className="text-slate-500 hover:text-rose-400 p-1.5 rounded-lg hover:bg-white/5 opacity-0 group-hover:opacity-100 transition-all duration-200"
@@ -2067,8 +2463,8 @@ export default function Dashboard() {
                 {/* Type Choice */}
                 <div>
                   <label className="text-slate-400 block mb-1.5 font-bold">Loại giao dịch</label>
-                  <select 
-                    value={editType} 
+                  <select
+                    value={editType}
                     onChange={(e: any) => setEditType(e.target.value)}
                     className="w-full bg-slate-900 border border-white/5 rounded-xl px-3 py-2 text-white font-bold focus:outline-none focus:border-indigo-500"
                   >
@@ -2076,11 +2472,11 @@ export default function Dashboard() {
                     <option value="income">Khoản Thu Nhập (+)</option>
                   </select>
                 </div>
-                
+
                 {/* Date */}
                 <div>
                   <label className="text-slate-400 block mb-1.5 font-bold">Ngày thực hiện</label>
-                  <input 
+                  <input
                     type="date"
                     value={editTransactionDate}
                     onChange={(e) => setEditTransactionDate(e.target.value)}
@@ -2093,7 +2489,7 @@ export default function Dashboard() {
               {/* Amount */}
               <div>
                 <label className="text-slate-400 block mb-1.5 font-bold">Số tiền (VND)</label>
-                <input 
+                <input
                   type="text"
                   value={editAmount}
                   onChange={(e) => setEditAmount(formatVNDString(e.target.value))}
@@ -2105,7 +2501,7 @@ export default function Dashboard() {
               {/* Store Name / Merchant */}
               <div>
                 <label className="text-slate-400 block mb-1.5 font-bold">Cửa hàng / Đối tác (Merchant)</label>
-                <input 
+                <input
                   type="text"
                   value={editMerchant}
                   onChange={(e) => setEditMerchant(e.target.value)}
@@ -2117,7 +2513,7 @@ export default function Dashboard() {
               {/* Category Selector */}
               <div>
                 <label className="text-slate-400 block mb-1.5 font-bold">Danh mục chi tiêu</label>
-                <select 
+                <select
                   value={editCategory}
                   onChange={(e) => setEditCategory(e.target.value)}
                   className="w-full bg-slate-900 border border-white/5 rounded-xl px-3 py-2 text-slate-300 focus:outline-none focus:border-indigo-500"
@@ -2134,7 +2530,7 @@ export default function Dashboard() {
               {/* Description Note */}
               <div>
                 <label className="text-slate-400 block mb-1.5 font-bold">Mô tả / Ghi chú</label>
-                <input 
+                <input
                   type="text"
                   value={editDescription}
                   onChange={(e) => setEditDescription(e.target.value)}
@@ -2146,14 +2542,14 @@ export default function Dashboard() {
 
               {/* Buttons */}
               <div className="pt-4 flex gap-3">
-                <button 
-                  type="submit" 
+                <button
+                  type="submit"
                   className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-indigo-600 hover:from-emerald-500 hover:to-indigo-500 text-white font-bold transition-all glow-indigo"
                 >
                   Lưu thay đổi
                 </button>
-                <button 
-                  type="button" 
+                <button
+                  type="button"
                   onClick={() => setEditingTransaction(null)}
                   className="px-4 py-2.5 rounded-xl bg-slate-900 border border-white/5 hover:border-white/10 text-slate-400 font-bold transition-all"
                 >
