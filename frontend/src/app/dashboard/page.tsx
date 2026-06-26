@@ -27,6 +27,7 @@ import AddTransactionTab from "../page/AddTransaction";
 import OcrTab from "./components/Ocr";
 import BudgetsTab from "../page/Budgets";
 import SecurityTab from "../page/Security";
+import RecurringTab from "../page/Recurring";
 
 // Interfaces
 interface Transaction {
@@ -76,7 +77,7 @@ export default function Dashboard() {
   });
 
   // Tab/Screen navigation State
-  const [activeTab, setActiveTab] = useState<"overview" | "add" | "ocr" | "budgets" | "security" | "history">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "add" | "ocr" | "budgets" | "security" | "history" | "recurring">("overview");
 
   // Edit Transaction states
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
@@ -255,6 +256,15 @@ export default function Dashboard() {
   const { data: fetchedBudgets } = useSWR(
     mounted && user ? "budgets" : null,
     () => api.getBudgets(),
+    {
+      refreshInterval: 5000,
+      revalidateOnFocus: true,
+    }
+  );
+
+  const { data: recurringTemplates, mutate: mutateRecurring } = useSWR(
+    mounted && user ? "recurring-templates" : null,
+    () => api.getRecurringTemplates(),
     {
       refreshInterval: 5000,
       revalidateOnFocus: true,
@@ -684,6 +694,17 @@ export default function Dashboard() {
             </button>
 
             <button
+              onClick={() => setActiveTab("recurring")}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 ${activeTab === "recurring"
+                ? "bg-indigo-600/25 border border-indigo-500/30 text-white"
+                : "text-slate-400 hover:bg-slate-900 hover:text-white"
+                }`}
+            >
+              <RefreshCw className="h-4.5 w-4.5" />
+              Giao dịch định kỳ
+            </button>
+
+            <button
               onClick={() => setActiveTab("security")}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 ${activeTab === "security"
                 ? "bg-indigo-600/25 border border-indigo-500/30 text-white"
@@ -760,6 +781,14 @@ export default function Dashboard() {
             budgets={budgets}
             setBudgets={setBudgets}
             mutate={mutate}
+          />
+        )}
+
+        {activeTab === "recurring" && (
+          <RecurringTab
+            templates={recurringTemplates || []}
+            isLoading={!recurringTemplates}
+            onRefresh={() => mutateRecurring()}
           />
         )}
 

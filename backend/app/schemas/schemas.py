@@ -131,3 +131,51 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     response: str
     suggested_questions: Optional[List[str]] = None
+
+
+# --- RECURRING TEMPLATE SCHEMAS ---
+
+class RecurringTemplateCreate(BaseModel):
+    amount: float = Field(..., gt=0, description="Amount must be positive")
+    type: str = Field("expense", description="'income' or 'expense'")
+    category: str = Field(..., description="Category name")
+    description: Optional[str] = None
+    frequency: str = Field("monthly", description="'daily', 'weekly', 'monthly', 'yearly'")
+    day_of_week: Optional[int] = Field(None, ge=0, le=6, description="0=Mon..6=Sun (weekly only)")
+    day_of_month: Optional[int] = Field(None, ge=1, le=31, description="1-31 (monthly only)")
+    start_date: date = Field(..., description="Start date of the recurrence")
+    end_date: Optional[date] = None
+    is_active: bool = True
+    is_auto_execute: bool = True
+
+class RecurringTemplateUpdate(BaseModel):
+    amount: Optional[float] = Field(None, gt=0)
+    type: Optional[str] = None
+    category: Optional[str] = None
+    description: Optional[str] = None
+    frequency: Optional[str] = None
+    day_of_week: Optional[int] = Field(None, ge=0, le=6)
+    day_of_month: Optional[int] = Field(None, ge=1, le=31)
+    next_run_date: Optional[date] = None
+    end_date: Optional[date] = None
+    is_active: Optional[bool] = None
+    is_auto_execute: Optional[bool] = None
+
+class RecurringTemplateResponse(BaseModel):
+    id: UUID
+    user_id: UUID
+    amount: float
+    type: str
+    category: str
+    description: Optional[str] = None
+    frequency: str
+    day_of_week: Optional[int] = None
+    day_of_month: Optional[int] = None
+    next_run_date: date
+    end_date: Optional[date] = None
+    is_active: bool
+    is_auto_execute: bool
+    created_at: datetime
+
+    class Config:
+        from_attributes = True

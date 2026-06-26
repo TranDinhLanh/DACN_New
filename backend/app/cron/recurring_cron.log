@@ -1,0 +1,7 @@
+2026-06-26 15:12:51,376 [INFO] Starting recurring templates execution cron job...
+2026-06-26 15:12:51,376 [INFO] --- QUET LICH TRINH DINH KY: 2026-06-26 ---
+2026-06-26 15:13:04,681 [INFO]   -> Auto-execute: 500000.0 | Bills & Utilities
+2026-06-26 15:13:04,682 [INFO]   -> Next run: 2026-07-26
+2026-06-26 15:13:15,683 [INFO] --- HOAN TAT: {'total_scanned': 1, 'auto_executed': 1, 'reminded': 0, 'failed': 0} ---
+2026-06-26 15:13:15,683 [INFO] Execution summary: {'total_scanned': 1, 'auto_executed': 1, 'reminded': 0, 'failed': 0}
+2026-06-26 15:13:15,684 [INFO] Cron job finished.
