@@ -259,10 +259,30 @@ Lưu ý:
             if gemini_key:
                 import google.generativeai as genai
                 genai.configure(api_key=gemini_key)
-                model = genai.GenerativeModel('gemini-pro')
                 
-                response = model.generate_content(prompt)
-                json_str = response.text.strip()
+                # Cơ chế tự động đổi mô hình nếu gặp lỗi (hết quota, không tồn tại...)
+                models_to_try = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-flash-latest"]
+                json_str = None
+                last_error = None
+                
+                for model_name in models_to_try:
+                    try:
+                        logger.info(f"[LLM-OCR] Đang thử gọi Gemini model: {model_name}...")
+                        model = genai.GenerativeModel(model_name)
+                        response = model.generate_content(prompt)
+                        json_str = response.text.strip()
+                        logger.info(f"[LLM-OCR] Gọi Gemini thành công bằng model: {model_name}")
+                        break
+                    except Exception as e:
+                        last_error = e
+                        logger.warning(f"[LLM-OCR] Lỗi khi dùng model {model_name}: {e}. Đang thử model dự phòng...")
+                
+                if json_str is None:
+                    if last_error:
+                        raise last_error
+                    else:
+                        raise Exception("Không thể xử lý OCR bằng bất kỳ model Gemini nào.")
+                
                 json_str = re.sub(r'```json\s*|\s*```', '', json_str)
                 
                 import json

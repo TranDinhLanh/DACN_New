@@ -1,5 +1,7 @@
 import os
 import logging
+import json
+import re
 from datetime import datetime, date
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -21,6 +23,62 @@ try:
     HAS_GEMINI = True
 except ImportError:
     logger.warning("⚠️ google-generativeai chưa được cài đặt.")
+
+def process_ai_action(ai_reply: str, db: Session, user_id) -> str:
+    """
+    Quét và thực thi hành động từ khối JSON đặc biệt trong phản hồi của AI.
+    Trả về câu trả lời đã được lọc sạch khối JSON để gửi cho người dùng.
+    """
+    json_pattern = r"```json\s*(\{.*?\})\s*```"
+    match = re.search(json_pattern, ai_reply, re.DOTALL)
+    if not match:
+        json_pattern_no_label = r"```\s*(\{.*?\})\s*```"
+        match = re.search(json_pattern_no_label, ai_reply, re.DOTALL)
+        
+    if match:
+        json_str = match.group(1)
+        clean_reply = ai_reply.replace(match.group(0), "").strip()
+        try:
+            action_data = json.loads(json_str)
+            action = action_data.get("action")
+            if action == "create_transaction":
+                amount = float(action_data.get("amount", 0))
+                tx_type = action_data.get("type", "expense")
+                category = action_data.get("category", "Other")
+                description = action_data.get("description", "Giao dịch từ AI Chat")
+                merchant_name = action_data.get("merchant_name")
+                
+                tx_date_str = action_data.get("transaction_date")
+                tx_date = date.today()
+                if tx_date_str:
+                    try:
+                        tx_date = datetime.strptime(tx_date_str, "%Y-%m-%d").date()
+                    except ValueError:
+                        pass
+                
+                if amount > 0:
+                    new_tx = Transaction(
+                        user_id=user_id,
+                        amount=amount,
+                        type=tx_type,
+                        category=category,
+                        description=description,
+                        transaction_date=tx_date,
+                        merchant_name=merchant_name
+                    )
+                    db.add(new_tx)
+                    db.commit()
+                    db.refresh(new_tx)
+                    
+                    type_vn = "Khoản chi tiêu" if tx_type == "expense" else "Khoản thu nhập"
+                    success_msg = f"\n\n🤖 **AuraAI đã tự động ghi nhận:** *{type_vn}* **{amount:,.0f}đ** thuộc danh mục *{category}* ({description or ''}) vào ngày {tx_date.strftime('%d/%m/%Y')}."
+                    return clean_reply + success_msg
+        except Exception as e:
+            logger.error(f"Lỗi khi thực thi hành động từ AI Chat: {e}")
+            return clean_reply + f"\n\n⚠️ *AuraAI phát hiện yêu cầu ghi chép nhưng gặp lỗi hệ thống: {str(e)}*"
+            
+    return ai_reply
+
 
 @router.post("/", response_model=ChatResponse)
 def chat_with_ai(
@@ -125,13 +183,26 @@ HƯỚNG DẪN TRẢ LỜI:
 4. Khi người dùng hỏi về chi tiêu (spending/chi phí), hãy tóm tắt các khoản chi tiêu lớn gần đây hoặc phân tích theo danh mục.
 5. Đưa ra các lời khuyên tài chính hữu ích, ngắn gọn, cá nhân hóa dựa trên hành vi chi tiêu của họ (ví dụ: khuyên họ giảm chi tiêu ở danh mục đang vượt hạn mức).
 6. Định dạng câu trả lời rõ ràng bằng markdown (in đậm, danh sách gạch đầu dòng, bảng nếu cần) để người dùng dễ đọc.
+7. GHI CHÉP GIAO DỊCH TỰ ĐỘNG (ĐẶC BIỆT):
+   Nếu người dùng yêu cầu bạn thêm, ghi nhận, lưu hoặc tạo một khoản chi tiêu hoặc thu nhập mới (ví dụ: "thêm chi tiêu ăn uống 50.000đ", "ghi nhận lương 10 triệu hôm nay", "lưu hóa đơn taxi 150k", v.v.), bạn bắt buộc phải:
+   - Trả lời xác nhận thân thiện trong văn bản phản hồi.
+   - Luôn luôn chèn một khối JSON ở cuối phản hồi của bạn có dạng chính xác như sau:
+   ```json
+   {{
+     "action": "create_transaction",
+     "amount": 50000,
+     "type": "expense",
+     "category": "Ăn uống",
+     "description": "Mô tả ngắn gọn hoặc tên khoản chi",
+     "transaction_date": "YYYY-MM-DD",
+     "merchant_name": "Tên cửa hàng nếu có hoặc null"
+   }}
+   ```
+   Trong đó:
+   - "type" chỉ được nhận giá trị "expense" (chi tiêu) hoặc "income" (thu nhập).
+   - "transaction_date" có định dạng "YYYY-MM-DD". Mặc định ngày hôm nay là: {datetime.now().strftime("%Y-%m-%d")} (nếu người dùng không chỉ rõ ngày khác).
+   - Danh mục (category) phải thuộc một trong các danh mục: Ăn uống, Di chuyển, Mua sắm, Giải trí, Hóa đơn, Lương, Khác.
 """
-            # Sử dụng model gemini-1.5-flash để phản hồi nhanh và chính xác
-            model = genai.GenerativeModel(
-                model_name="gemini-1.5-flash",
-                system_instruction=system_instruction
-            )
-
             # Chuyển đổi lịch sử chat từ request sang định dạng Gemini mong muốn
             gemini_history = []
             if chat_req.history:
@@ -143,26 +214,56 @@ HƯỚNG DẪN TRẢ LỜI:
                         "parts": [msg.content]
                     })
 
-            chat = model.start_chat(history=gemini_history)
-            response = chat.send_message(message)
-            ai_reply = response.text
+            # Cơ chế tự động đổi mô hình nếu gặp lỗi (hết quota, không tồn tại...)
+            models_to_try = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-flash-latest"]
+            ai_reply = None
+            last_error = None
+
+            for model_name in models_to_try:
+                try:
+                    logger.info(f"Đang thử gọi Gemini model: {model_name}...")
+                    model = genai.GenerativeModel(
+                        model_name=model_name,
+                        system_instruction=system_instruction
+                    )
+                    chat = model.start_chat(history=gemini_history)
+                    response = chat.send_message(message)
+                    ai_reply = response.text
+                    logger.info(f"Gọi Gemini thành công bằng model: {model_name}")
+                    break
+                except Exception as e:
+                    last_error = e
+                    logger.warning(f"Lỗi khi dùng model {model_name}: {e}. Đang thử model dự phòng...")
+
+            if ai_reply is None:
+                if last_error:
+                    raise last_error
+                else:
+                    raise Exception("Không thể khởi tạo và phản hồi từ bất kỳ model Gemini nào.")
 
             # Gợi ý các câu hỏi tiếp theo dựa trên nội dung câu hỏi hiện tại
             suggested = get_suggested_questions(message, budgets_list, net_balance)
 
+            # Thực thi hành động ghi chép hóa đơn/giao dịch nếu có trong phản hồi AI
+            processed_reply = process_ai_action(ai_reply, db, current_user.id)
+
             return ChatResponse(
-                response=ai_reply,
+                response=processed_reply,
                 suggested_questions=suggested
             )
 
         except Exception as e:
             logger.error(f"Lỗi khi gọi Gemini API: {e}")
             # Fallback sang mock responder nếu có lỗi gọi API
-            return get_fallback_ai_response(message, user_name, total_income, total_expense, net_balance, budgets_list, recent_txs, api_error=True)
+            fallback_res = get_fallback_ai_response(message, user_name, total_income, total_expense, net_balance, budgets_list, recent_txs, api_error=True)
+            fallback_res.response = process_ai_action(fallback_res.response, db, current_user.id)
+            return fallback_res
 
     else:
         # Nếu chưa cấu hình API Key, sử dụng smart fallback response
-        return get_fallback_ai_response(message, user_name, total_income, total_expense, net_balance, budgets_list, recent_txs, api_error=False)
+        fallback_res = get_fallback_ai_response(message, user_name, total_income, total_expense, net_balance, budgets_list, recent_txs, api_error=False)
+        fallback_res.response = process_ai_action(fallback_res.response, db, current_user.id)
+        return fallback_res
 
 
 def get_suggested_questions(message: str, budgets: list, net_balance: float) -> List[str]:
@@ -223,7 +324,77 @@ def get_fallback_ai_response(
 
     response_content = ""
     
-    if any(k in msg_lower for k in ["chào", "hello", "hi", "xin chào", "tên là gì", "ai đó"]):
+    # Phân tích cú pháp ghi chép hóa đơn/giao dịch cục bộ
+    is_add_intent = any(k in msg_lower for k in ["thêm", "ghi", "lưu", "tạo", "record", "add"])
+    amount = 0.0
+    amount_match = re.search(r'(\d+[\d\.,]*)\s*(k|tr triệu|tr|triệu|tỷ|vnd|đ|d)?(?:\s|$|\.)', msg_lower)
+    if amount_match:
+        val_str = amount_match.group(1).replace('.', '').replace(',', '')
+        try:
+            val = float(val_str)
+            unit = amount_match.group(2)
+            if unit in ['k', 'K']:
+                amount = val * 1000
+            elif unit in ['triệu', 'tr', 'tr triệu']:
+                amount = val * 1000000
+            else:
+                amount = val
+        except ValueError:
+            pass
+
+    if is_add_intent and amount > 0:
+        tx_type = "expense"
+        if any(k in msg_lower for k in ["thu nhập", "lương", "nhận", "income"]):
+            tx_type = "income"
+            
+        category = "Khác"
+        category_mapping = {
+            "Ăn uống": ["ăn", "uống", "cafe", "nhậu", "cơm", "phở", "bánh", "trà", "nước"],
+            "Di chuyển": ["di chuyển", "xe", "xăng", "bus", "grab", "taxi", "lốp", "sửa xe"],
+            "Mua sắm": ["mua", "sắm", "quần", "áo", "giày", "dép", "siêu thị", "chợ"],
+            "Giải trí": ["giải trí", "phim", "game", "nhạc", "du lịch", "chơi"],
+            "Hóa đơn": ["hóa đơn", "điện", "nước", "mạng", "internet", "cước", "thuê nhà"],
+            "Lương": ["lương", "thưởng", "thu nhập"],
+        }
+        for cat_name, keywords in category_mapping.items():
+            if any(kw in msg_lower for kw in keywords):
+                category = cat_name
+                break
+                
+        description = message
+        for kw in ["thêm chi tiêu", "thêm thu nhập", "thêm hóa đơn", "thêm giao dịch", "thêm", "ghi nhận", "ghi chép", "ghi"]:
+            if msg_lower.startswith(kw):
+                description = message[len(kw):].strip()
+                break
+        if not description:
+            description = f"Ghi chép {category.lower()} tự động"
+
+        action_json = {
+            "action": "create_transaction",
+            "amount": amount,
+            "type": tx_type,
+            "category": category,
+            "description": description,
+            "transaction_date": date.today().isoformat(),
+            "merchant_name": None
+        }
+        
+        type_vn = "khoản chi tiêu" if tx_type == "expense" else "khoản thu nhập"
+        response_content = f"""
+Chào **{user_name}**! Tôi đã nhận dạng yêu cầu ghi chép tài chính của bạn.
+
+Tôi sẽ thực hiện lưu **{type_vn}** này với các thông tin sau:
+- **Số tiền:** {amount:,.0f} VND
+- **Loại:** {'Chi tiêu' if tx_type == 'expense' else 'Thu nhập'}
+- **Danh mục:** {category}
+- **Mô tả:** {description}
+
+```json
+{json.dumps(action_json, ensure_ascii=False, indent=2)}
+```
+"""
+
+    elif any(k in msg_lower for k in ["chào", "hello", "hi", "xin chào", "tên là gì", "ai đó"]):
         response_content = f"""
 Chào **{user_name}**! Tôi là **AuraAI** - Trợ lý Tài chính Cá nhân của bạn. 
 

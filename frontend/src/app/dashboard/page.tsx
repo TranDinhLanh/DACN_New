@@ -22,7 +22,8 @@ import {
   MapPin,
   HelpCircle,
   Lock,
-  LogOut
+  LogOut,
+  Clock
 } from "lucide-react";
 import { api } from "@/lib/api";
 import {
@@ -144,12 +145,10 @@ export default function Dashboard() {
 
   // Chatbox UI States
   const [isChatOpen, setIsChatOpen] = useState(false);
-  const [chatMessages, setChatMessages] = useState<{ role: string; content: string }[]>([
-    {
-      role: "assistant",
-      content: "Chào bạn! Tôi là **AuraAI**, trợ lý tài chính cá nhân của bạn. Tôi có thể giúp bạn kiểm tra ngân sách, xem chi tiêu và đưa ra các lời khuyên hữu ích. Bạn có câu hỏi nào cho tôi không?"
-    }
-  ]);
+  const [chatView, setChatView] = useState<"chat" | "history">("chat");
+  const [pastChats, setPastChats] = useState<{ id: string; title: string; messages: { role: string; content: string }[]; createdAt: string }[]>([]);
+  const [activeChatId, setActiveChatId] = useState<string>("");
+  const [chatMessages, setChatMessages] = useState<{ role: string; content: string }[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
   const [chatSuggestions, setChatSuggestions] = useState<string[]>([
@@ -157,6 +156,129 @@ export default function Dashboard() {
     "Tôi đã chi tiêu bao nhiêu?",
     "Số dư tài khoản hiện tại?"
   ]);
+
+  // Load chats from localStorage on mount
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const savedPastChats = localStorage.getItem("aura_past_chats");
+      const savedActiveChatId = localStorage.getItem("aura_active_chat_id");
+      const savedChatMessages = localStorage.getItem("aura_chat_messages");
+
+      if (savedPastChats) {
+        setPastChats(JSON.parse(savedPastChats));
+      }
+
+      if (savedActiveChatId && savedChatMessages) {
+        setActiveChatId(savedActiveChatId);
+        setChatMessages(JSON.parse(savedChatMessages));
+      } else {
+        const newId = Date.now().toString();
+        const initialMsg = [
+          {
+            role: "assistant",
+            content: "Chào bạn! Tôi là **AuraAI**, trợ lý tài chính cá nhân của bạn. Tôi có thể giúp bạn kiểm tra ngân sách, xem chi tiêu và đưa ra các lời khuyên hữu ích. Bạn có câu hỏi nào cho tôi không?"
+          }
+        ];
+        setActiveChatId(newId);
+        setChatMessages(initialMsg);
+        localStorage.setItem("aura_active_chat_id", newId);
+        localStorage.setItem("aura_chat_messages", JSON.stringify(initialMsg));
+      }
+    }
+  }, []);
+
+  // Save current chat messages to localStorage whenever they change
+  useEffect(() => {
+    if (activeChatId && chatMessages.length > 0) {
+      localStorage.setItem("aura_chat_messages", JSON.stringify(chatMessages));
+    }
+  }, [chatMessages, activeChatId]);
+
+  const handleEndChat = () => {
+    if (chatMessages.length <= 1) {
+      return;
+    }
+
+    const firstUserMsg = chatMessages.find(m => m.role === "user");
+    let title = firstUserMsg ? firstUserMsg.content : "Cuộc trò chuyện ngắn";
+    if (title.length > 30) {
+      title = title.substring(0, 27) + "...";
+    }
+
+    const completedChat = {
+      id: activeChatId,
+      title: title,
+      messages: chatMessages,
+      createdAt: new Date().toLocaleString("vi-VN")
+    };
+
+    const updatedPastChats = [completedChat, ...pastChats];
+    setPastChats(updatedPastChats);
+    localStorage.setItem("aura_past_chats", JSON.stringify(updatedPastChats));
+
+    // Reset active chat
+    const newId = Date.now().toString();
+    const initialMsg = [
+      {
+        role: "assistant",
+        content: "Chào bạn! Tôi là **AuraAI**, trợ lý tài chính cá nhân của bạn. Tôi có thể giúp bạn kiểm tra ngân sách, xem chi tiêu và đưa ra các lời khuyên hữu ích. Bạn có câu hỏi nào cho tôi không?"
+      }
+    ];
+    setActiveChatId(newId);
+    setChatMessages(initialMsg);
+    localStorage.setItem("aura_active_chat_id", newId);
+    localStorage.setItem("aura_chat_messages", JSON.stringify(initialMsg));
+    setChatView("chat");
+  };
+
+  const handleViewPastChat = (session: { id: string; title: string; messages: { role: string; content: string }[]; createdAt: string }) => {
+    if (chatMessages.length > 1) {
+      const firstUserMsg = chatMessages.find(m => m.role === "user");
+      let title = firstUserMsg ? firstUserMsg.content : "Cuộc trò chuyện ngắn";
+      if (title.length > 30) {
+        title = title.substring(0, 27) + "...";
+      }
+      
+      setPastChats(prev => {
+        const filtered = prev.filter(c => c.id !== activeChatId);
+        const updated = [{
+          id: activeChatId,
+          title: title,
+          messages: chatMessages,
+          createdAt: new Date().toLocaleString("vi-VN")
+        }, ...filtered];
+        localStorage.setItem("aura_past_chats", JSON.stringify(updated));
+        return updated;
+      });
+    }
+
+    setActiveChatId(session.id);
+    setChatMessages(session.messages);
+    localStorage.setItem("aura_active_chat_id", session.id);
+    localStorage.setItem("aura_chat_messages", JSON.stringify(session.messages));
+    setChatView("chat");
+  };
+
+  const handleDeletePastChat = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const updated = pastChats.filter(c => c.id !== id);
+    setPastChats(updated);
+    localStorage.setItem("aura_past_chats", JSON.stringify(updated));
+    
+    if (activeChatId === id) {
+      const newId = Date.now().toString();
+      const initialMsg = [
+        {
+          role: "assistant",
+          content: "Chào bạn! Tôi là **AuraAI**, trợ lý tài chính cá nhân của bạn. Tôi có thể giúp bạn kiểm tra ngân sách, xem chi tiêu và đưa ra các lời khuyên hữu ích. Bạn có câu hỏi nào cho tôi không?"
+        }
+      ];
+      setActiveChatId(newId);
+      setChatMessages(initialMsg);
+      localStorage.setItem("aura_active_chat_id", newId);
+      localStorage.setItem("aura_chat_messages", JSON.stringify(initialMsg));
+    }
+  };
 
   // Auth and hydration verification shield
   useEffect(() => {
@@ -186,13 +308,13 @@ export default function Dashboard() {
           .then(data => {
             setBudgets(data || []);
             if (data && data.length > 0) {
-              const totalLimit = data.reduce((sum, b) => sum + b.limit_amount, 0);
+              const totalLimit = data.reduce((sum: number, b: Budget) => sum + b.limit_amount, 0);
               if (totalLimit > 0) {
                 setMonthlyIncome(totalLimit);
                 // Also update jar percentages based on the loaded limits!
                 setJarPercentages(prev => {
                   const updated = { ...prev };
-                  data.forEach(b => {
+                  data.forEach((b: Budget) => {
                     if (b.category in updated) {
                       updated[b.category] = Math.round((b.limit_amount / totalLimit) * 100);
                     }
@@ -1757,86 +1879,156 @@ export default function Dashboard() {
                   <Sparkles className="h-4 w-4 text-white" />
                 </div>
                 <div>
-                  <h4 className="text-xs font-extrabold text-white">AuraAI Assistant</h4>
+                  <h4 className="text-xs font-extrabold text-white">
+                    {chatView === "chat" ? "AuraAI Assistant" : "Lịch sử trò chuyện"}
+                  </h4>
                   <div className="flex items-center gap-1.5 mt-0.5">
                     <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
                     <span className="text-[10px] text-slate-400 font-semibold">Trực tuyến</span>
                   </div>
                 </div>
               </div>
-              <button 
-                onClick={() => setIsChatOpen(false)}
-                className="text-slate-400 hover:text-white transition-colors p-1 rounded-lg hover:bg-white/5"
-              >
-                <Plus className="h-4 w-4 rotate-45" />
-              </button>
-            </div>
-
-            {/* Chat Messages Log */}
-            <div className="flex-1 p-4 overflow-y-auto space-y-4 scrollbar-thin">
-              {chatMessages.map((msg, index) => (
-                <div key={index} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-                  <div className={`max-w-[85%] rounded-2xl p-3 text-xs leading-relaxed ${
-                    msg.role === "user" 
-                      ? "bg-gradient-to-r from-indigo-600 to-cyan-500 text-white font-medium rounded-tr-none shadow-md"
-                      : "bg-slate-900 border border-white/5 text-slate-300 rounded-tl-none"
-                  }`}>
-                    {renderMessageContent(msg.content)}
-                  </div>
-                </div>
-              ))}
-              
-              {/* Chat Loading State */}
-              {chatLoading && (
-                <div className="flex justify-start">
-                  <div className="bg-slate-900 border border-white/5 text-slate-400 rounded-2xl rounded-tl-none p-3 text-xs flex items-center gap-2">
-                    <div className="flex gap-1">
-                      <span className="h-1.5 w-1.5 rounded-full bg-indigo-400 animate-bounce" style={{ animationDelay: "0ms" }}></span>
-                      <span className="h-1.5 w-1.5 rounded-full bg-indigo-400 animate-bounce" style={{ animationDelay: "150ms" }}></span>
-                      <span className="h-1.5 w-1.5 rounded-full bg-indigo-400 animate-bounce" style={{ animationDelay: "300ms" }}></span>
-                    </div>
-                    <span>AuraAI đang phân tích...</span>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Suggested Questions */}
-            {chatSuggestions.length > 0 && !chatLoading && (
-              <div className="px-3 py-2 border-t border-white/5 bg-slate-950/50 flex gap-1.5 overflow-x-auto whitespace-nowrap scrollbar-none">
-                {chatSuggestions.map((q, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => handleSendChatMessage(q)}
-                    className="text-[9px] bg-indigo-950/30 hover:bg-indigo-900/40 border border-indigo-500/20 hover:border-indigo-500/40 text-indigo-300 px-2.5 py-1 rounded-full font-semibold transition-all duration-200 shrink-0"
+              <div className="flex items-center gap-1.5">
+                {chatView === "chat" ? (
+                  <>
+                    <button 
+                      onClick={handleEndChat}
+                      disabled={chatMessages.length <= 1}
+                      title="Kết thúc & Lưu cuộc trò chuyện"
+                      className="text-[9px] text-rose-300 hover:text-rose-200 font-bold border border-rose-500/20 hover:border-rose-500/40 bg-rose-950/30 disabled:opacity-40 disabled:cursor-not-allowed px-2 py-1 rounded-lg transition-all duration-200"
+                    >
+                      Kết thúc
+                    </button>
+                    <button 
+                      onClick={() => setChatView("history")}
+                      title="Xem lịch sử trò chuyện"
+                      className="text-slate-400 hover:text-white transition-colors p-1 rounded-lg hover:bg-white/5"
+                    >
+                      <Clock className="h-3.5 w-3.5" />
+                    </button>
+                  </>
+                ) : (
+                  <button 
+                    onClick={() => setChatView("chat")}
+                    className="text-[9px] text-indigo-300 hover:text-indigo-200 font-bold border border-indigo-500/20 hover:border-indigo-500/40 bg-indigo-950/30 px-2 py-1 rounded-lg transition-all duration-200"
                   >
-                    {q}
+                    Quay lại
                   </button>
-                ))}
+                )}
+                <button 
+                  onClick={() => setIsChatOpen(false)}
+                  className="text-slate-400 hover:text-white transition-colors p-1 rounded-lg hover:bg-white/5"
+                >
+                  <Plus className="h-4 w-4 rotate-45" />
+                </button>
               </div>
-            )}
+            </div>
 
-            {/* Input Form */}
-            <form 
-              onSubmit={(e) => { e.preventDefault(); handleSendChatMessage(); }}
-              className="p-3 bg-slate-950 border-t border-white/10 flex gap-2"
-            >
-              <input
-                type="text"
-                value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
-                placeholder="Hỏi về ngân sách, chi tiêu của bạn..."
-                className="flex-1 bg-slate-900 border border-white/5 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
-                disabled={chatLoading}
-              />
-              <button
-                type="submit"
-                disabled={chatLoading || !chatInput.trim()}
-                className="bg-indigo-600 hover:bg-indigo-500 text-white p-2 rounded-xl transition-all shadow-md flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed glow-indigo"
-              >
-                <ArrowUpRight className="h-4 w-4" />
-              </button>
-            </form>
+            {/* Chat Messages Log OR History View */}
+            {chatView === "chat" ? (
+              <>
+                <div className="flex-1 p-4 overflow-y-auto space-y-4 scrollbar-thin">
+                  {chatMessages.map((msg, index) => (
+                    <div key={index} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+                      <div className={`max-w-[85%] rounded-2xl p-3 text-xs leading-relaxed ${
+                        msg.role === "user" 
+                          ? "bg-gradient-to-r from-indigo-600 to-cyan-500 text-white font-medium rounded-tr-none shadow-md"
+                          : "bg-slate-900 border border-white/5 text-slate-300 rounded-tl-none"
+                      }`}>
+                        {renderMessageContent(msg.content)}
+                      </div>
+                    </div>
+                  ))}
+                  
+                  {/* Chat Loading State */}
+                  {chatLoading && (
+                    <div className="flex justify-start">
+                      <div className="bg-slate-900 border border-white/5 text-slate-400 rounded-2xl rounded-tl-none p-3 text-xs flex items-center gap-2">
+                        <div className="flex gap-1">
+                          <span className="h-1.5 w-1.5 rounded-full bg-indigo-400 animate-bounce" style={{ animationDelay: "0ms" }}></span>
+                          <span className="h-1.5 w-1.5 rounded-full bg-indigo-400 animate-bounce" style={{ animationDelay: "150ms" }}></span>
+                          <span className="h-1.5 w-1.5 rounded-full bg-indigo-400 animate-bounce" style={{ animationDelay: "300ms" }}></span>
+                        </div>
+                        <span>AuraAI đang phân tích...</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Suggested Questions */}
+                {chatSuggestions.length > 0 && !chatLoading && (
+                  <div className="px-3 py-2 border-t border-white/5 bg-slate-950/50 flex gap-1.5 overflow-x-auto whitespace-nowrap scrollbar-none">
+                    {chatSuggestions.map((q, idx) => (
+                      <button
+                        key={idx}
+                        onClick={() => handleSendChatMessage(q)}
+                        className="text-[9px] bg-indigo-950/30 hover:bg-indigo-900/40 border border-indigo-500/20 hover:border-indigo-500/40 text-indigo-300 px-2.5 py-1 rounded-full font-semibold transition-all duration-200 shrink-0"
+                      >
+                        {q}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* Input Form */}
+                <form 
+                  onSubmit={(e) => { e.preventDefault(); handleSendChatMessage(); }}
+                  className="p-3 bg-slate-950 border-t border-white/10 flex gap-2"
+                >
+                  <input
+                    type="text"
+                    value={chatInput}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    placeholder="Hỏi về ngân sách, chi tiêu của bạn..."
+                    className="flex-1 bg-slate-900 border border-white/5 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                    disabled={chatLoading}
+                  />
+                  <button
+                    type="submit"
+                    disabled={chatLoading || !chatInput.trim()}
+                    className="bg-indigo-600 hover:bg-indigo-500 text-white p-2 rounded-xl transition-all shadow-md flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed glow-indigo"
+                  >
+                    <ArrowUpRight className="h-4 w-4" />
+                  </button>
+                </form>
+              </>
+            ) : (
+              <>
+                <div className="flex-1 p-4 overflow-y-auto space-y-3 scrollbar-thin">
+                  {pastChats.length === 0 ? (
+                    <div className="h-full flex flex-col items-center justify-center text-slate-500 text-xs">
+                      <Clock className="h-8 w-8 mb-2 opacity-30 text-slate-400" />
+                      <span>Chưa có lịch sử trò chuyện</span>
+                    </div>
+                  ) : (
+                    pastChats.map((chat) => (
+                      <div 
+                        key={chat.id} 
+                        onClick={() => handleViewPastChat(chat)}
+                        className={`p-3 rounded-xl border border-white/5 bg-slate-900/40 hover:bg-slate-900/80 cursor-pointer transition-all duration-200 flex justify-between items-center group ${
+                          activeChatId === chat.id ? "border-indigo-500/40 bg-indigo-950/10" : ""
+                        }`}
+                      >
+                        <div className="flex-1 min-w-0 pr-2">
+                          <h5 className="text-xs font-bold text-white truncate">{chat.title}</h5>
+                          <span className="text-[9px] text-slate-500 block mt-1">{chat.createdAt}</span>
+                        </div>
+                        <button 
+                          onClick={(e) => handleDeletePastChat(chat.id, e)}
+                          title="Xóa cuộc trò chuyện này"
+                          className="text-slate-500 hover:text-rose-400 p-1.5 rounded-lg hover:bg-white/5 opacity-0 group-hover:opacity-100 transition-all duration-200"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+                <div className="p-3.5 bg-slate-950 border-t border-white/10 text-center text-[10px] text-slate-500 font-semibold">
+                  Chọn cuộc trò chuyện cũ để tiếp tục hoặc xem lại
+                </div>
+              </>
+            )}
           </div>
         )}
 
