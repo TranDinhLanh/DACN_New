@@ -4,7 +4,7 @@ from typing import List, Optional
 from uuid import UUID
 from app.core.database import get_db
 from app.api.deps import get_current_user
-from app.models.models import Transaction, User
+from app.models.models import Transaction, User, Event
 from app.schemas.schemas import TransactionCreate, TransactionResponse, TransactionUpdate
 from app.services.ai_classify import CategoryClassifier
 
@@ -42,6 +42,15 @@ def create_transaction(
     if (category == "Other" or not category) and transaction_in.description:
         category = CategoryClassifier.classify(transaction_in.description)
 
+    # Validate event_id if provided
+    if transaction_in.event_id:
+        db_event = db.query(Event).filter(
+            Event.id == transaction_in.event_id,
+            Event.user_id == current_user.id
+        ).first()
+        if not db_event:
+            raise HTTPException(status_code=404, detail="Sự kiện không tồn tại")
+
     db_transaction = Transaction(
         user_id=current_user.id,
         amount=transaction_in.amount,
@@ -50,7 +59,8 @@ def create_transaction(
         description=transaction_in.description,
         transaction_date=transaction_in.transaction_date,
         merchant_name=transaction_in.merchant_name,
-        ocr_log_id=transaction_in.ocr_log_id
+        ocr_log_id=transaction_in.ocr_log_id,
+        event_id=transaction_in.event_id
     )
     
     # Check if budget limits are affected (optional callback logic in services)
@@ -77,6 +87,15 @@ def update_transaction(
     
     if not db_transaction:
         raise HTTPException(status_code=404, detail="Transaction not found")
+
+    # Validate event_id if provided in the update
+    if transaction_in.event_id is not None:
+        db_event = db.query(Event).filter(
+            Event.id == transaction_in.event_id,
+            Event.user_id == current_user.id
+        ).first()
+        if not db_event:
+            raise HTTPException(status_code=404, detail="Sự kiện không tồn tại")
         
     update_data = transaction_in.model_dump(exclude_unset=True)
     for field, value in update_data.items():

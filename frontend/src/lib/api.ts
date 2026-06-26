@@ -188,6 +188,56 @@ export const api = {
     });
   },
 
+  // --- EVENTS API ---
+  getEvents() {
+    return fetchAPI("/events/", {
+      method: "GET",
+      requiresAuth: true,
+    });
+  },
+
+  getEventDetail(eventId: string) {
+    return fetchAPI(`/events/${eventId}`, {
+      method: "GET",
+      requiresAuth: true,
+    });
+  },
+
+  createEvent(eventData: {
+    name: string;
+    budget_limit: number;
+    start_date?: string;
+    end_date?: string;
+    is_completed?: boolean;
+  }) {
+    return fetchAPI("/events/", {
+      method: "POST",
+      body: JSON.stringify(eventData),
+      requiresAuth: true,
+    });
+  },
+
+  updateEvent(eventId: string, eventData: {
+    name?: string;
+    budget_limit?: number;
+    start_date?: string;
+    end_date?: string;
+    is_completed?: boolean;
+  }) {
+    return fetchAPI(`/events/${eventId}`, {
+      method: "PUT",
+      body: JSON.stringify(eventData),
+      requiresAuth: true,
+    });
+  },
+
+  deleteEvent(eventId: string) {
+    return fetchAPI(`/events/${eventId}`, {
+      method: "DELETE",
+      requiresAuth: true,
+    });
+  },
+
   // --- AI CHAT API ---
   chatWithAI(message: string, history: { role: string; content: string }[]) {
     return fetchAPI("/chat/", {

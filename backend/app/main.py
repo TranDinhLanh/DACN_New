@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.core.database import engine, Base
-from app.api import auth, transactions, budgets, ocr, forecast, chat
+from app.api import auth, transactions, budgets, ocr, forecast, chat, events
 
 # Attempt database table initialization automatically on startup
 try:
@@ -52,6 +52,7 @@ app.include_router(budgets.router, prefix=f"{settings.API_V1_STR}/budgets", tags
 app.include_router(ocr.router, prefix=f"{settings.API_V1_STR}/ocr", tags=["AI OCR"])
 app.include_router(forecast.router, prefix=f"{settings.API_V1_STR}/forecast", tags=["AI Forecast"])
 app.include_router(chat.router, prefix=f"{settings.API_V1_STR}/chat", tags=["AI Chat"])
+app.include_router(events.router, prefix=f"{settings.API_V1_STR}/events", tags=["Events"])
 
 @app.get("/")
 def read_root():
