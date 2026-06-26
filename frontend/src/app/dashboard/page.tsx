@@ -6,42 +6,27 @@ import { useRouter } from "next/navigation";
 import useSWR, { mutate } from "swr";
 import {
   Sparkles,
-  TrendingUp,
+  Layers,
+  Clock,
   FileText,
   Plus,
-  Trash2,
-  Edit,
   AlertTriangle,
-  UploadCloud,
-  Check,
-  RefreshCw,
-  ArrowUpRight,
-  ArrowDownRight,
-  Wallet,
-  Calendar,
-  Layers,
-  MapPin,
-  HelpCircle,
   Lock,
   LogOut,
-  Clock,
-  Search
+  Trash2,
+  Edit,
+  ArrowUpRight,
+  RefreshCw,
 } from "lucide-react";
 import { api } from "@/lib/api";
-import {
-  PieChart as RechartsPieChart,
-  Pie,
-  Cell,
-  BarChart as RechartsBarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-  AreaChart,
-  Area,
-  CartesianGrid
-} from "recharts";
+
+// Import our modular components
+import OverviewTab from "../page/Overview";
+import HistoryTab from "../page/History";
+import AddTransactionTab from "../page/AddTransaction";
+import OcrTab from "./components/Ocr";
+import BudgetsTab from "../page/Budgets";
+import SecurityTab from "../page/Security";
 
 // Interfaces
 interface Transaction {
@@ -60,7 +45,7 @@ interface Budget {
   spent_amount: number;
 }
 
-// Initial Mock Datasets to instantly wow the user
+// Initial Mock Datasets
 const INITIAL_TRANSACTIONS: Transaction[] = [
   { id: "1", amount: 42000000, type: "income", category: "Salary", description: "Lương tháng này", transaction_date: "2026-05-25", merchant_name: "Công ty Công nghệ" },
   { id: "2", amount: 1200000, type: "expense", category: "Bills & Utilities", description: "Hóa đơn điện sinh hoạt", transaction_date: "2026-05-26", merchant_name: "EVN Điện Lực" },
@@ -71,40 +56,15 @@ const INITIAL_TRANSACTIONS: Transaction[] = [
   { id: "7", amount: 950000, type: "expense", category: "Entertainment", description: "Ve xem phim CGV & An uong", transaction_date: "2026-05-18", merchant_name: "CGV Cinemas" },
 ];
 
-const INITIAL_BUDGETS: Budget[] = [
-  { category: "Food & Beverage", limit_amount: 3000000, spent_amount: 85000 },
-  { category: "Bills & Utilities", limit_amount: 4000000, spent_amount: 3600000 },
-  { category: "Shopping", limit_amount: 2000000, spent_amount: 450000 },
-  { category: "Transportation", limit_amount: 1500000, spent_amount: 150000 },
-  { category: "Entertainment", limit_amount: 1000000, spent_amount: 950000 },
-];
-
-// Color mapping for premium charts
-const COLORS = ["#6366f1", "#10b981", "#ef4444", "#f59e0b", "#06b6d4", "#a855f7"];
-
 export default function Dashboard() {
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
-
-  // Helper to format raw number strings to Vietnamese format (e.g., 15000000 -> 15.000.000)
-  const formatVNDString = (valStr: string | number) => {
-    if (valStr === undefined || valStr === null || valStr === "") return "";
-    const clean = valStr.toString().replace(/\D/g, "");
-    if (!clean) return "";
-    return Number(clean).toLocaleString("vi-VN");
-  };
-
-  // Helper to clean formatted VND strings back to raw number
-  const cleanVNDString = (valStr: string) => {
-    if (!valStr) return "";
-    return valStr.replace(/\D/g, "");
-  };
 
   const [user, setUser] = useState<{ email: string; full_name?: string } | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [budgets, setBudgets] = useState<Budget[]>([]);
 
-  // Jars Budget Allocator states
+  // Jars Budget Allocator states (synchronized on load)
   const [monthlyIncome, setMonthlyIncome] = useState<number>(10000000);
   const [jarPercentages, setJarPercentages] = useState<{ [key: string]: number }>({
     "Food & Beverage": 35,
@@ -115,38 +75,35 @@ export default function Dashboard() {
     "Other": 10
   });
 
-  // Tab/Screen navigation State (added security tab)
+  // Tab/Screen navigation State
   const [activeTab, setActiveTab] = useState<"overview" | "add" | "ocr" | "budgets" | "security" | "history">("overview");
-  const [overviewSubTab, setOverviewSubTab] = useState<"all" | "income" | "expense">("all");
-  const [historySearch, setHistorySearch] = useState("");
-  const [historyFilter, setHistoryFilter] = useState<"all" | "income" | "expense">("all");
 
-  // Form inputs for Transaction creation
-  const [amount, setAmount] = useState("");
-  const [type, setType] = useState<"income" | "expense">("expense");
-  const [category, setCategory] = useState("Other");
-  const [description, setDescription] = useState("");
-  const [merchant, setMerchant] = useState("");
-  const [transactionDate, setTransactionDate] = useState(new Date().toISOString().split("T")[0]);
+  // Edit Transaction states
+  const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
+  const [editAmount, setEditAmount] = useState("");
+  const [editType, setEditType] = useState<"income" | "expense">("expense");
+  const [editCategory, setEditCategory] = useState("Other");
+  const [editDescription, setEditDescription] = useState("");
+  const [editMerchant, setEditMerchant] = useState("");
+  const [editTransactionDate, setEditTransactionDate] = useState("");
+  const [globalLoadingMessage, setGlobalLoadingMessage] = useState<string | null>(null);
 
-  // AI Instant categorizer trigger
-  const [aiSuggestion, setAiSuggestion] = useState<string | null>(null);
-
-  // OCR Upload States
-  const [dragActive, setDragActive] = useState(false);
-  const [ocrLoading, setOcrLoading] = useState(false);
-  const [ocrSuccess, setOcrSuccess] = useState(false);
-  const [ocrExtractedData, setOcrExtractedData] = useState<any>(null);
-  const [ocrPreviewUrl, setOcrPreviewUrl] = useState<string | null>(null);
-  const [ocrError, setOcrError] = useState<string | null>(null);
-
-  // Change Password states
-  const [oldPassword, setOldPassword] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [securityError, setSecurityError] = useState<string | null>(null);
-  const [securitySuccess, setSecuritySuccess] = useState<string | null>(null);
-  const [securityLoading, setSecurityLoading] = useState(false);
+  // Sync editCategory when editType changes in the Edit modal
+  useEffect(() => {
+    if (editingTransaction) {
+      if (editType === "income") {
+        const incomeCats = ["Salary", "Bonus", "Business", "Investment", "Other Income"];
+        if (!incomeCats.includes(editCategory)) {
+          setEditCategory("Salary");
+        }
+      } else {
+        const expenseCats = ["Other", "Food & Beverage", "Transportation", "Shopping", "Bills & Utilities", "Entertainment"];
+        if (!expenseCats.includes(editCategory)) {
+          setEditCategory("Other");
+        }
+      }
+    }
+  }, [editType, editingTransaction]);
 
   // Chatbox UI States
   const [isChatOpen, setIsChatOpen] = useState(false);
@@ -290,7 +247,7 @@ export default function Dashboard() {
     mounted && user ? "transactions" : null,
     () => api.getTransactions(),
     {
-      refreshInterval: 5000, // auto-refresh every 5 seconds
+      refreshInterval: 5000,
       revalidateOnFocus: true,
     }
   );
@@ -308,6 +265,14 @@ export default function Dashboard() {
   useEffect(() => {
     if (fetchedTransactions) {
       setTransactions(fetchedTransactions);
+
+      const totalIncome = fetchedTransactions
+        .filter((t: Transaction) => t.type === "income")
+        .reduce((sum: number, t: Transaction) => sum + t.amount, 0);
+
+      if (totalIncome > 0) {
+        setMonthlyIncome(totalIncome);
+      }
     }
   }, [fetchedTransactions]);
 
@@ -317,9 +282,15 @@ export default function Dashboard() {
       const data = fetchedBudgets;
       if (data && data.length > 0) {
         const totalLimit = data.reduce((sum: number, b: Budget) => sum + b.limit_amount, 0);
-        if (totalLimit > 0) {
+        const totalIncome = transactions
+          .filter((t: Transaction) => t.type === "income")
+          .reduce((sum: number, t: Transaction) => sum + t.amount, 0);
+
+        if (totalLimit > 0 && totalIncome === 0) {
           setMonthlyIncome(totalLimit);
-          // Also update jar percentages based on the loaded limits!
+        }
+
+        if (totalLimit > 0) {
           setJarPercentages(prev => {
             const updated = { ...prev };
             data.forEach((b: Budget) => {
@@ -332,20 +303,18 @@ export default function Dashboard() {
         }
       }
     }
-  }, [fetchedBudgets]);
+  }, [fetchedBudgets, transactions]);
 
   // Auth and hydration verification shield
   useEffect(() => {
     setMounted(true);
 
-    // Check if token exists
     const token = localStorage.getItem("auth_token");
     if (!token) {
       router.push("/login");
       return;
     }
 
-    // Fetch user details
     api.getMe()
       .then(userData => {
         setUser(userData);
@@ -357,187 +326,88 @@ export default function Dashboard() {
       });
   }, [router]);
 
-  // AI Classification engine working on the client-side for dynamic mock responsiveness
-  useEffect(() => {
-    if (!description || description.trim().length < 3) {
-      setAiSuggestion(null);
-      return;
-    }
+  // Helper to format raw number strings to Vietnamese format (e.g., 15000000 -> 15.000.000)
+  const formatVNDString = (valStr: string | number) => {
+    if (valStr === undefined || valStr === null || valStr === "") return "";
+    const clean = valStr.toString().replace(/\D/g, "");
+    if (!clean) return "";
+    return Number(clean).toLocaleString("vi-VN");
+  };
 
-    const descLower = description.toLowerCase();
+  // Helper to clean formatted VND strings back to raw number
+  const cleanVNDString = (valStr: string) => {
+    if (!valStr) return "";
+    return valStr.replace(/\D/g, "");
+  };
 
-    // Quick keyword parser mimicking the FastAPI AI classifier
-    if (descLower.includes("coffee") || descLower.includes("tra sua") || descLower.includes("an") || descLower.includes("highlands") || descLower.includes("gongcha") || descLower.includes("phuc long")) {
-      setAiSuggestion("Food & Beverage");
-    } else if (descLower.includes("grab") || descLower.includes("taxi") || descLower.includes("xang") || descLower.includes("bus")) {
-      setAiSuggestion("Transportation");
-    } else if (descLower.includes("shopee") || descLower.includes("lazada") || descLower.includes("tiki") || descLower.includes("quan ao") || descLower.includes("giay")) {
-      setAiSuggestion("Shopping");
-    } else if (descLower.includes("hoa don") || descLower.includes("dien") || descLower.includes("nuoc") || descLower.includes("wifi") || descLower.includes("internet") || descLower.includes("evn")) {
-      setAiSuggestion("Bills & Utilities");
-    } else if (descLower.includes("cgv") || descLower.includes("rap phim") || descLower.includes("netflix") || descLower.includes("game") || descLower.includes("playstation")) {
-      setAiSuggestion("Entertainment");
-    } else {
-      setAiSuggestion("Other");
-    }
-  }, [description]);
-
-  // Calculate high-fidelity dashboard metrics
-  const totalIncome = transactions
-    .filter(t => t.type === "income")
-    .reduce((sum, t) => sum + t.amount, 0);
-
-  const totalExpense = transactions
-    .filter(t => t.type === "expense")
-    .reduce((sum, t) => sum + t.amount, 0);
-
-  const displayIncome = totalIncome > 0 ? totalIncome : monthlyIncome;
-  const netBalance = displayIncome - totalExpense;
-
-  // Add manually input transaction
-  const handleSaveTransaction = (e: React.FormEvent) => {
-    e.preventDefault();
-    const rawAmount = Number(cleanVNDString(amount));
-    if (!rawAmount || isNaN(rawAmount)) return;
-
-    // Use AI suggested category if the selected one is Other
-    const finalCategory = (category === "Other" && aiSuggestion) ? aiSuggestion : category;
-
-    // Save transaction to backend
+  // Form handlers for adding transactions
+  const handleSaveTransaction = (data: {
+    amount: number;
+    type: "income" | "expense";
+    category: string;
+    description: string;
+    transaction_date: string;
+    merchant_name?: string;
+  }) => {
+    setGlobalLoadingMessage("Đang lưu giao dịch...");
     api.createTransaction({
-      amount: rawAmount,
-      type,
-      category: finalCategory,
-      description: description || "Giao dịch không mô tả",
-      transaction_date: transactionDate,
-      merchant_name: merchant || undefined
+      amount: data.amount,
+      type: data.type,
+      category: data.category,
+      description: data.description,
+      transaction_date: data.transaction_date,
+      merchant_name: data.merchant_name
     })
       .then(savedTx => {
         setTransactions(prev => [savedTx, ...prev]);
 
-        // Dynamic spent budget updating on the fly!
-        if (type === "expense") {
+        if (data.type === "expense") {
           setBudgets(prev => prev.map(b => {
-            if (b.category === finalCategory) {
-              return { ...b, spent_amount: b.spent_amount + rawAmount };
+            if (b.category === data.category) {
+              return { ...b, spent_amount: b.spent_amount + data.amount };
             }
             return b;
           }));
         }
         mutate("transactions");
         mutate("budgets");
+        setActiveTab("overview");
       })
       .catch(err => {
         console.error("Failed to save transaction to database:", err);
-        // Fallback local update if backend is unreachable
         const newTx: Transaction = {
           id: Date.now().toString(),
-          amount: rawAmount,
-          type,
-          category: finalCategory,
-          description: description || "Giao dịch không mô tả",
-          transaction_date: transactionDate,
-          merchant_name: merchant || undefined
+          amount: data.amount,
+          type: data.type,
+          category: data.category,
+          description: data.description,
+          transaction_date: data.transaction_date,
+          merchant_name: data.merchant_name
         };
         setTransactions(prev => [newTx, ...prev]);
+        setActiveTab("overview");
+      })
+      .finally(() => {
+        setGlobalLoadingMessage(null);
       });
+  };
 
-    // Reset Form
-    setAmount("");
-    setDescription("");
-    setMerchant("");
-    setCategory("Other");
-
-    // Redirect to overview
+  const handleOcrSaveSuccess = (savedTx: any) => {
+    setTransactions(prev => [savedTx, ...prev]);
+    if (savedTx.type === "expense") {
+      setBudgets(prev => prev.map(b => {
+        if (b.category === savedTx.category) {
+          return { ...b, spent_amount: b.spent_amount + savedTx.amount };
+        }
+        return b;
+      }));
+    }
+    mutate("transactions");
+    mutate("budgets");
     setActiveTab("overview");
   };
 
-  // Real OCR & LayoutLMv3 Upload integration
-  const handleOcrFileSubmit = async (files: FileList | null) => {
-    if (!files || files.length === 0) return;
-
-    const file = files[0];
-
-    // Create instant local URL for real-time receipt image preview
-    const previewUrl = URL.createObjectURL(file);
-    setOcrPreviewUrl(previewUrl);
-
-    setOcrLoading(true);
-    setOcrSuccess(false);
-    setOcrError(null);
-    setOcrExtractedData(null);
-
-    const formData = new FormData();
-    formData.append("file", file);
-
-    try {
-      const response = await fetch("http://localhost:8000/api/v1/ocr/upload", {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const errDetail = await response.json();
-        throw new Error(errDetail.detail || "Không thể kết nối đến máy chủ OCR.");
-      }
-
-      const parsedData = await response.json();
-
-      setOcrLoading(false);
-      setOcrSuccess(true);
-      setOcrExtractedData(parsedData);
-
-      // Auto pre-populate transaction forms with live LayoutLMv3 results
-      setMerchant(parsedData.merchant || "Cửa hàng không rõ");
-      setAmount(parsedData.amount ? formatVNDString(parsedData.amount.toString()) : "0");
-      setCategory(parsedData.category || "Other");
-      setDescription(`Quét hóa đơn ${parsedData.merchant || ""}`);
-      setTransactionDate(parsedData.transaction_date || new Date().toISOString().split("T")[0]);
-      setType("expense");
-    } catch (err: any) {
-      setOcrLoading(false);
-      setOcrSuccess(false);
-      setOcrError(err.message || "Đã xảy ra lỗi khi tải lên hóa đơn.");
-    }
-  };
-
-  // Delete transaction
-  const handleDeleteTransaction = (id: string) => {
-    const txToDelete = transactions.find(t => t.id === id);
-    if (!txToDelete) return;
-
-    api.deleteTransaction(id)
-      .then(() => {
-        setTransactions(transactions.filter(t => t.id !== id));
-
-        // Reverse budget values
-        if (txToDelete.type === "expense") {
-          setBudgets(prev => prev.map(b => {
-            if (b.category === txToDelete.category) {
-              return { ...b, spent_amount: Math.max(0, b.spent_amount - txToDelete.amount) };
-            }
-            return b;
-          }));
-        }
-        mutate("transactions");
-        mutate("budgets");
-      })
-      .catch(err => {
-        console.error("Failed to delete transaction from database:", err);
-        // Local only fallback
-        setTransactions(transactions.filter(t => t.id !== id));
-      });
-  };
-
-  // State variables for editing a transaction
-  const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
-  const [editAmount, setEditAmount] = useState("");
-  const [editType, setEditType] = useState<"income" | "expense">("expense");
-  const [editCategory, setEditCategory] = useState("Other");
-  const [editDescription, setEditDescription] = useState("");
-  const [editMerchant, setEditMerchant] = useState("");
-  const [editTransactionDate, setEditTransactionDate] = useState("");
-
+  // CRUD handlers for edit/delete
   const handleStartEdit = (tx: Transaction) => {
     setEditingTransaction(tx);
     setEditAmount(formatVNDString(tx.amount.toString()));
@@ -553,38 +423,25 @@ export default function Dashboard() {
     if (!editingTransaction) return;
     const oldTx = editingTransaction;
     const newAmount = Number(cleanVNDString(editAmount));
+    if (!newAmount || isNaN(newAmount)) return;
 
-    const updatePayload = {
+    setGlobalLoadingMessage("Đang cập nhật giao dịch...");
+    api.updateTransaction(oldTx.id, {
       amount: newAmount,
       type: editType,
       category: editCategory,
       description: editDescription,
       transaction_date: editTransactionDate,
       merchant_name: editMerchant || undefined
-    };
-
-    api.updateTransaction(oldTx.id, updatePayload)
+    })
       .then(updatedTx => {
         setTransactions(prev => prev.map(t => t.id === oldTx.id ? updatedTx : t));
-
-        // Recalculate budgets on the fly
-        setBudgets(prev => prev.map(b => {
-          let spent = b.spent_amount;
-          if (oldTx.type === "expense" && b.category === oldTx.category) {
-            spent = Math.max(0, spent - oldTx.amount);
-          }
-          if (editType === "expense" && b.category === editCategory) {
-            spent = spent + newAmount;
-          }
-          return { ...b, spent_amount: spent };
-        }));
-
+        setEditingTransaction(null);
         mutate("transactions");
         mutate("budgets");
-        setEditingTransaction(null);
       })
       .catch(err => {
-        console.error("Failed to update transaction:", err);
+        console.error("Failed to save transaction edits:", err);
         const updatedLocalTx: Transaction = {
           ...oldTx,
           amount: newAmount,
@@ -596,63 +453,32 @@ export default function Dashboard() {
         };
         setTransactions(prev => prev.map(t => t.id === oldTx.id ? updatedLocalTx : t));
         setEditingTransaction(null);
+      })
+      .finally(() => {
+        setGlobalLoadingMessage(null);
       });
   };
 
-  // Pre-aggregate category spending/income data for Recharts Pie Chart
-  const getPieData = (chartType: "income" | "expense" = "expense") => {
-    const dataMap: { [key: string]: number } = {};
-    transactions
-      .filter(t => t.type === chartType)
-      .forEach(t => {
-        dataMap[t.category] = (dataMap[t.category] || 0) + t.amount;
+  const handleDeleteTransaction = (id: string) => {
+    if (!confirm("Bạn có chắc chắn muốn xóa giao dịch này?")) return;
+    setGlobalLoadingMessage("Đang xóa giao dịch...");
+    api.deleteTransaction(id)
+      .then(() => {
+        setTransactions(prev => prev.filter(t => t.id !== id));
+        mutate("transactions");
+        mutate("budgets");
+      })
+      .catch(err => {
+        console.error("Failed to delete transaction:", err);
+        setTransactions(prev => prev.filter(t => t.id !== id));
+      })
+      .finally(() => {
+        setGlobalLoadingMessage(null);
       });
-
-    return Object.keys(dataMap).map(key => ({
-      name: key,
-      value: dataMap[key]
-    }));
   };
 
-  // Find category with highest income
-  const getHighestIncomeSource = () => {
-    const incomeTxs = transactions.filter(t => t.type === "income");
-    if (incomeTxs.length === 0) return "Chưa có";
-    const dataMap: { [key: string]: number } = {};
-    incomeTxs.forEach(t => {
-      dataMap[t.category] = (dataMap[t.category] || 0) + t.amount;
-    });
-    let maxCat = "";
-    let maxVal = -1;
-    Object.entries(dataMap).forEach(([cat, val]) => {
-      if (val > maxVal) {
-        maxVal = val;
-        maxCat = cat;
-      }
-    });
-    return `${maxCat || "Khác"} (${maxVal.toLocaleString()}đ)`;
-  };
-
-  // Dynamic future Prophet prediction line simulator using mock linear math
-  const getForecastData = () => {
-    const forecast = [];
-    const today = new Date();
-    // Daily forecast
-    for (let i = 1; i <= 30; i++) {
-      const forecastDate = new Date(today);
-      forecastDate.setDate(today.getDate() + i);
-      const isWeekend = forecastDate.getDay() === 0 || forecastDate.getDay() === 6;
-      // standard seasonal variation + minor regression line
-      const base = 250000 + (i * 2000); // minor growth trend
-      const variation = isWeekend ? 1.35 : 0.85;
-      const noise = 0.9 + Math.random() * 0.2;
-
-      forecast.push({
-        date: forecastDate.toLocaleDateString("vi-VN", { day: "numeric", month: "short" }),
-        "Dự đoán": Math.round((base * variation * noise) / 1000) * 1000
-      });
-    }
-    return forecast;
+  const handleResetTransactions = () => {
+    setTransactions(INITIAL_TRANSACTIONS);
   };
 
   // Chatbox Send handler
@@ -664,13 +490,11 @@ export default function Dashboard() {
       setChatInput("");
     }
 
-    // Add user message to log
     const updatedMessages = [...chatMessages, { role: "user", content: text }];
     setChatMessages(updatedMessages);
     setChatLoading(true);
 
     try {
-      // Map roles for backend chat API
       const historyToSend = chatMessages.map(msg => ({
         role: msg.role === "assistant" ? "model" : "user",
         content: msg.content
@@ -804,8 +628,8 @@ export default function Dashboard() {
             <button
               onClick={() => setActiveTab("overview")}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 ${activeTab === "overview"
-                  ? "bg-indigo-600/25 border border-indigo-500/30 text-white"
-                  : "text-slate-400 hover:bg-slate-900 hover:text-white"
+                ? "bg-indigo-600/25 border border-indigo-500/30 text-white"
+                : "text-slate-400 hover:bg-slate-900 hover:text-white"
                 }`}
             >
               <Layers className="h-4.5 w-4.5" />
@@ -815,8 +639,8 @@ export default function Dashboard() {
             <button
               onClick={() => setActiveTab("history")}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 ${activeTab === "history"
-                  ? "bg-indigo-600/25 border border-indigo-500/30 text-white"
-                  : "text-slate-400 hover:bg-slate-900 hover:text-white"
+                ? "bg-indigo-600/25 border border-indigo-500/30 text-white"
+                : "text-slate-400 hover:bg-slate-900 hover:text-white"
                 }`}
             >
               <Clock className="h-4.5 w-4.5" />
@@ -826,8 +650,8 @@ export default function Dashboard() {
             <button
               onClick={() => setActiveTab("ocr")}
               className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 ${activeTab === "ocr"
-                  ? "bg-indigo-600/25 border border-indigo-500/30 text-white"
-                  : "text-slate-400 hover:bg-slate-900 hover:text-white"
+                ? "bg-indigo-600/25 border border-indigo-500/30 text-white"
+                : "text-slate-400 hover:bg-slate-900 hover:text-white"
                 }`}
             >
               <div className="flex items-center gap-3">
@@ -840,8 +664,8 @@ export default function Dashboard() {
             <button
               onClick={() => setActiveTab("add")}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 ${activeTab === "add"
-                  ? "bg-indigo-600/25 border border-indigo-500/30 text-white"
-                  : "text-slate-400 hover:bg-slate-900 hover:text-white"
+                ? "bg-indigo-600/25 border border-indigo-500/30 text-white"
+                : "text-slate-400 hover:bg-slate-900 hover:text-white"
                 }`}
             >
               <Plus className="h-4.5 w-4.5" />
@@ -851,8 +675,8 @@ export default function Dashboard() {
             <button
               onClick={() => setActiveTab("budgets")}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 ${activeTab === "budgets"
-                  ? "bg-indigo-600/25 border border-indigo-500/30 text-white"
-                  : "text-slate-400 hover:bg-slate-900 hover:text-white"
+                ? "bg-indigo-600/25 border border-indigo-500/30 text-white"
+                : "text-slate-400 hover:bg-slate-900 hover:text-white"
                 }`}
             >
               <AlertTriangle className="h-4.5 w-4.5" />
@@ -862,8 +686,8 @@ export default function Dashboard() {
             <button
               onClick={() => setActiveTab("security")}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 ${activeTab === "security"
-                  ? "bg-indigo-600/25 border border-indigo-500/30 text-white"
-                  : "text-slate-400 hover:bg-slate-900 hover:text-white"
+                ? "bg-indigo-600/25 border border-indigo-500/30 text-white"
+                : "text-slate-400 hover:bg-slate-900 hover:text-white"
                 }`}
             >
               <Lock className="h-4.5 w-4.5" />
@@ -892,1376 +716,55 @@ export default function Dashboard() {
 
       {/* 2. Main Dashboard Content Grid */}
       <main className="flex-1 p-6 md:p-10 max-w-7xl mx-auto w-full overflow-y-auto">
-
-        {/* TAB 1: OVERVIEW SCREEN */}
         {activeTab === "overview" && (
-          <div className="space-y-8">
-
-            {/* Header section */}
-            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-              <div>
-                <h2 className="text-2xl font-extrabold text-white flex items-center gap-2">
-                  Hệ thống Quản lý Tài chính <Sparkles className="h-5 w-5 text-indigo-400" />
-                </h2>
-                <p className="text-slate-400 text-sm mt-0.5">Thời gian thực tế: {new Date().toLocaleDateString("vi-VN", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}</p>
-              </div>
-
-              <div className="flex gap-3">
-                <button onClick={() => setActiveTab("ocr")} className="px-4 py-2 rounded-xl text-xs font-bold bg-indigo-600 text-white glow-indigo hover:bg-indigo-500 transition-all flex items-center gap-1.5">
-                  <UploadCloud className="h-4 w-4" /> Quét Hóa Đơn AI
-                </button>
-                <button onClick={() => setActiveTab("add")} className="px-4 py-2 rounded-xl text-xs font-bold bg-slate-900 border border-white/5 hover:border-white/10 text-white transition-all flex items-center gap-1.5">
-                  <Plus className="h-4 w-4" /> Thêm khoản chi
-                </button>
-              </div>
-            </div>
-
-            {/* Sub-tabs for separating Income & Expense */}
-            <div className="flex border-b border-white/5 gap-6 text-sm">
-              <button
-                onClick={() => setOverviewSubTab("all")}
-                className={`pb-3 font-semibold transition-all relative ${
-                  overviewSubTab === "all"
-                    ? "text-indigo-400 border-b-2 border-indigo-500"
-                    : "text-slate-400 hover:text-slate-200"
-                }`}
-              >
-                Tổng Quan Chung
-              </button>
-              <button
-                onClick={() => setOverviewSubTab("income")}
-                className={`pb-3 font-semibold transition-all relative ${
-                  overviewSubTab === "income"
-                    ? "text-emerald-400 border-b-2 border-emerald-500"
-                    : "text-slate-400 hover:text-slate-200"
-                }`}
-              >
-                Phần Thu Nhập (+)
-              </button>
-              <button
-                onClick={() => setOverviewSubTab("expense")}
-                className={`pb-3 font-semibold transition-all relative ${
-                  overviewSubTab === "expense"
-                    ? "text-rose-400 border-b-2 border-rose-500"
-                    : "text-slate-400 hover:text-slate-200"
-                }`}
-              >
-                Phần Chi Tiêu (-)
-              </button>
-            </div>
-
-            {/* Financial Quick Metrics */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {overviewSubTab === "all" && (
-                <>
-                  {/* Card 1 */}
-                  <div className="glass-card rounded-2xl p-6 relative overflow-hidden border-l-2 border-indigo-500">
-                    <div className="absolute top-4 right-4 h-10 w-10 rounded-xl bg-indigo-500/10 flex items-center justify-center text-indigo-400">
-                      <Wallet className="h-5 w-5" />
-                    </div>
-                    <span className="text-xs text-slate-400 block font-medium">Tổng Số Dư Khả Dụng</span>
-                    <span className="text-2xl font-extrabold text-white block mt-2 tracking-tight">
-                      {netBalance.toLocaleString()}đ
-                    </span>
-                    <span className="text-[10px] text-slate-500 block mt-1.5 flex items-center gap-1">
-                      Đã tự động tính từ lương & các khoản chi tiêu
-                    </span>
-                  </div>
-
-                  {/* Card 2 */}
-                  <div className="glass-card rounded-2xl p-6 relative overflow-hidden border-l-2 border-emerald-500">
-                    <div className="absolute top-4 right-4 h-10 w-10 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-400">
-                      <ArrowUpRight className="h-5 w-5" />
-                    </div>
-                    <span className="text-xs text-slate-400 block font-medium">Tổng Thu Nhập Tháng Này</span>
-                    <span className="text-2xl font-extrabold text-emerald-400 block mt-2 tracking-tight">
-                      +{displayIncome.toLocaleString()}đ
-                    </span>
-                    <span className="text-[10px] text-emerald-500/80 block mt-1.5 font-semibold">
-                      Tăng trưởng ổn định
-                    </span>
-                  </div>
-
-                  {/* Card 3 */}
-                  <div className="glass-card rounded-2xl p-6 relative overflow-hidden border-l-2 border-rose-500">
-                    <div className="absolute top-4 right-4 h-10 w-10 rounded-xl bg-rose-500/10 flex items-center justify-center text-rose-400">
-                      <ArrowDownRight className="h-5 w-5" />
-                    </div>
-                    <span className="text-xs text-slate-400 block font-medium">Tổng Chi Tiêu Thực Tế</span>
-                    <span className="text-2xl font-extrabold text-rose-400 block mt-2 tracking-tight">
-                      -{totalExpense.toLocaleString()}đ
-                    </span>
-                    <span className="text-[10px] text-rose-500/80 block mt-1.5 font-semibold">
-                      {transactions.filter(t => t.type === "expense").length} giao dịch chi tiêu ghi nhận
-                    </span>
-                  </div>
-                </>
-              )}
-
-              {overviewSubTab === "income" && (
-                <>
-                  {/* Income Card 1 */}
-                  <div className="glass-card rounded-2xl p-6 relative overflow-hidden border-l-2 border-emerald-500">
-                    <div className="absolute top-4 right-4 h-10 w-10 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-400">
-                      <ArrowUpRight className="h-5 w-5" />
-                    </div>
-                    <span className="text-xs text-slate-400 block font-medium">Tổng Thu Nhập Tháng Này</span>
-                    <span className="text-2xl font-extrabold text-emerald-400 block mt-2 tracking-tight">
-                      +{displayIncome.toLocaleString()}đ
-                    </span>
-                    <span className="text-[10px] text-emerald-500/80 block mt-1.5 font-semibold">
-                      Dòng tiền thu của bạn ổn định
-                    </span>
-                  </div>
-
-                  {/* Income Card 2 */}
-                  <div className="glass-card rounded-2xl p-6 relative overflow-hidden border-l-2 border-indigo-500">
-                    <div className="absolute top-4 right-4 h-10 w-10 rounded-xl bg-indigo-500/10 flex items-center justify-center text-indigo-400">
-                      <FileText className="h-5 w-5" />
-                    </div>
-                    <span className="text-xs text-slate-400 block font-medium">Số Khoản Thu Ghi Nhận</span>
-                    <span className="text-2xl font-extrabold text-white block mt-2 tracking-tight">
-                      {transactions.filter(t => t.type === "income").length} khoản
-                    </span>
-                    <span className="text-[10px] text-slate-500 block mt-1.5 flex items-center gap-1">
-                      Các nguồn thu nhập tự động & thủ công
-                    </span>
-                  </div>
-
-                  {/* Income Card 3 */}
-                  <div className="glass-card rounded-2xl p-6 relative overflow-hidden border-l-2 border-cyan-500">
-                    <div className="absolute top-4 right-4 h-10 w-10 rounded-xl bg-cyan-500/10 flex items-center justify-center text-cyan-400">
-                      <TrendingUp className="h-5 w-5" />
-                    </div>
-                    <span className="text-xs text-slate-400 block font-medium">Nguồn Thu Lớn Nhất</span>
-                    <span className="text-lg font-extrabold text-cyan-400 block mt-3.5 tracking-tight truncate">
-                      {getHighestIncomeSource()}
-                    </span>
-                    <span className="text-[10px] text-cyan-500/80 block mt-1.5 font-semibold">
-                      Danh mục đem lại nguồn thu lớn nhất
-                    </span>
-                  </div>
-                </>
-              )}
-
-              {overviewSubTab === "expense" && (
-                <>
-                  {/* Expense Card 1 */}
-                  <div className="glass-card rounded-2xl p-6 relative overflow-hidden border-l-2 border-rose-500">
-                    <div className="absolute top-4 right-4 h-10 w-10 rounded-xl bg-rose-500/10 flex items-center justify-center text-rose-400">
-                      <ArrowDownRight className="h-5 w-5" />
-                    </div>
-                    <span className="text-xs text-slate-400 block font-medium">Tổng Chi Tiêu Thực Tế</span>
-                    <span className="text-2xl font-extrabold text-rose-400 block mt-2 tracking-tight">
-                      -{totalExpense.toLocaleString()}đ
-                    </span>
-                    <span className="text-[10px] text-rose-500/80 block mt-1.5 font-semibold">
-                      {transactions.filter(t => t.type === "expense").length} giao dịch chi tiêu ghi nhận
-                    </span>
-                  </div>
-
-                  {/* Expense Card 2 */}
-                  <div className="glass-card rounded-2xl p-6 relative overflow-hidden border-l-2 border-indigo-500">
-                    <div className="absolute top-4 right-4 h-10 w-10 rounded-xl bg-indigo-500/10 flex items-center justify-center text-indigo-400">
-                      <Layers className="h-5 w-5" />
-                    </div>
-                    <span className="text-xs text-slate-400 block font-medium">Hạn Mức Ngân Sách Tổng</span>
-                    <span className="text-2xl font-extrabold text-white block mt-2 tracking-tight">
-                      {budgets.reduce((sum, b) => sum + b.limit_amount, 0).toLocaleString()}đ
-                    </span>
-                    <span className="text-[10px] text-slate-500 block mt-1.5 flex items-center gap-1">
-                      Tổng hạn mức của các hũ chi tiêu
-                    </span>
-                  </div>
-
-                  {/* Expense Card 3 */}
-                  <div className="glass-card rounded-2xl p-6 relative overflow-hidden border-l-2 border-amber-500">
-                    <div className="absolute top-4 right-4 h-10 w-10 rounded-xl bg-amber-500/10 flex items-center justify-center text-amber-400">
-                      <AlertTriangle className="h-5 w-5" />
-                    </div>
-                    <span className="text-xs text-slate-400 block font-medium">Hũ Đang Cảnh Báo (&gt;75%)</span>
-                    <span className="text-2xl font-extrabold text-amber-400 block mt-2 tracking-tight">
-                      {budgets.filter(b => b.limit_amount > 0 && (b.spent_amount / b.limit_amount) >= 0.75).length} hũ
-                    </span>
-                    <span className="text-[10px] text-amber-500/80 block mt-1.5 font-semibold">
-                      Cần cân đối ngân sách cho các hũ này
-                    </span>
-                  </div>
-                </>
-              )}
-            </div>
-
-            {/* Active budget status warnings */}
-            {overviewSubTab !== "income" && (
-              <div className="glass-card rounded-2xl p-6 border border-white/5">
-                <h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2">
-                  <AlertTriangle className="h-4.5 w-4.5 text-amber-500" /> Cảnh Báo Ngưỡng Hạn Mức Ngân Sách Tháng 5
-                </h3>
-                <div className="space-y-4">
-                  {budgets.length > 0 ? (
-                    budgets.map((b, i) => {
-                      const percent = b.limit_amount > 0 ? Math.min(100, Math.round((b.spent_amount / b.limit_amount) * 100)) : 0;
-                      let colorClass = "bg-emerald-500";
-                      let textClass = "text-emerald-400";
-                      if (percent >= 90) {
-                        colorClass = "bg-rose-500 animate-pulse";
-                        textClass = "text-rose-400 font-bold";
-                      } else if (percent >= 75) {
-                        colorClass = "bg-amber-500";
-                        textClass = "text-amber-400";
-                      }
-
-                      return (
-                        <div key={i} className="space-y-1.5">
-                          <div className="flex items-center justify-between text-xs font-semibold">
-                            <span className="text-slate-300">{b.category}</span>
-                            <span className="text-slate-400">
-                              Đã chi <span className={textClass}>{b.spent_amount.toLocaleString()}đ</span> / {b.limit_amount.toLocaleString()}đ ({percent}%)
-                            </span>
-                          </div>
-                          <div className="h-2 w-full bg-slate-900 rounded-full overflow-hidden border border-white/5">
-                            <div className={`h-full rounded-full ${colorClass}`} style={{ width: `${percent}%` }} />
-                          </div>
-                        </div>
-                      );
-                    })
-                  ) : (
-                    <div className="text-center py-6 text-xs text-slate-500">
-                      Bạn chưa thiết lập hũ chi tiêu nào. Hãy vào tab <button onClick={() => setActiveTab("budgets")} className="text-indigo-400 hover:underline font-bold">Hạn mức ngân sách</button> để phân chia hũ tài chính ngay!
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Analytical Graphing Grids (Category + Forecast Charts) */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-
-              {/* Category Pie Recharts */}
-              <div className="glass-card rounded-2xl p-6 border border-white/5 lg:col-span-5 flex flex-col justify-between">
-                <div>
-                  <h3 className="text-sm font-bold text-slate-300 mb-1">
-                    {overviewSubTab === "income" ? "Cơ Cấu Thu Nhập" : "Cơ Cấu Chi Tiêu"} (AI Categorized)
-                  </h3>
-                  <p className="text-[11px] text-slate-500">
-                    {overviewSubTab === "income" ? "Phân tích nguồn thu nhập tự động" : "Phân tích phân phối danh mục chi tiêu tự động"}
-                  </p>
-                </div>
-
-                <div className="h-60 w-full relative mt-4 flex items-center justify-center">
-                  {getPieData(overviewSubTab === "income" ? "income" : "expense").length > 0 ? (
-                    <ResponsiveContainer width="100%" height="100%">
-                      <RechartsPieChart>
-                        <Pie
-                          data={getPieData(overviewSubTab === "income" ? "income" : "expense")}
-                          cx="50%"
-                          cy="50%"
-                          innerRadius={50}
-                          outerRadius={75}
-                          paddingAngle={3}
-                          dataKey="value"
-                        >
-                          {getPieData(overviewSubTab === "income" ? "income" : "expense").map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                          ))}
-                        </Pie>
-                        <Tooltip
-                          contentStyle={{ backgroundColor: "rgba(15, 23, 42, 0.95)", borderColor: "rgba(255,255,255,0.08)", color: "#fff", fontSize: "11px", borderRadius: "10px" }}
-                          formatter={(value: any) => `${value.toLocaleString()} VND`}
-                        />
-                      </RechartsPieChart>
-                    </ResponsiveContainer>
-                  ) : (
-                    <span className="text-xs text-slate-500">
-                      {overviewSubTab === "income" ? "Chưa ghi nhận thu nhập" : "Chưa ghi nhận chi tiêu"}
-                    </span>
-                  )}
-                </div>
-
-                <div className="grid grid-cols-3 gap-2 mt-4 text-[10px] text-slate-400">
-                  {getPieData(overviewSubTab === "income" ? "income" : "expense").map((entry, index) => (
-                    <div key={index} className="flex items-center gap-1">
-                      <div className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: COLORS[index % COLORS.length] }} />
-                      <span className="truncate">{entry.name}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Time Series Prophet Line Chart or Savings Rate Analysis */}
-              {overviewSubTab === "income" ? (
-                /* Savings Rate Analysis & AI recommendation */
-                <div className="glass-card rounded-2xl p-6 border border-white/5 lg:col-span-7 flex flex-col justify-between">
-                  <div>
-                    <h3 className="text-sm font-bold text-slate-300">Phân Tích Dòng Tiền & Tỷ Lệ Tiết Kiệm</h3>
-                    <p className="text-[11px] text-slate-500">Đánh giá tỷ lệ tích lũy của bạn dựa trên thu nhập và chi tiêu hiện tại</p>
-                  </div>
-
-                  <div className="space-y-6 my-auto pt-4">
-                    <div>
-                      <div className="flex justify-between text-xs font-semibold text-slate-300 mb-1.5">
-                        <span>Tỷ lệ tích lũy tích cực</span>
-                        <span className="text-emerald-400 font-extrabold">
-                          {displayIncome > 0 ? Math.max(0, Math.round(((displayIncome - totalExpense) / displayIncome) * 100)) : 0}%
-                        </span>
-                      </div>
-                      <div className="h-3 w-full bg-slate-950 rounded-full overflow-hidden border border-white/5">
-                        <div
-                          className="h-full bg-gradient-to-r from-indigo-500 to-emerald-500 transition-all duration-500"
-                          style={{ width: `${displayIncome > 0 ? Math.max(0, Math.min(100, Math.round(((displayIncome - totalExpense) / displayIncome) * 100))) : 0}%` }}
-                        />
-                      </div>
-                    </div>
-
-                    <div className="p-4 rounded-xl bg-slate-900/60 border border-white/5 space-y-2">
-                      <span className="text-xs font-bold text-indigo-400 flex items-center gap-1">
-                        <Sparkles className="h-3.5 w-3.5 text-cyan-400" /> Đánh giá từ Trợ lý Tài chính Aura AI:
-                      </span>
-                      <p className="text-[11px] text-slate-400 leading-relaxed">
-                        {displayIncome > 0 && ((displayIncome - totalExpense) / displayIncome) >= 0.5 ? (
-                          "Tuyệt vời! Bạn đang tiết kiệm được trên 50% thu nhập của mình. Đây là tỷ lệ cực kỳ lý tưởng để gia tăng quỹ đầu tư hoặc tiết kiệm dài hạn."
-                        ) : displayIncome > 0 && ((displayIncome - totalExpense) / displayIncome) >= 0.2 ? (
-                          "Tốt! Bạn đang đạt mức tiết kiệm tiêu chuẩn (20% - 50%). Hãy cố gắng duy trì thói quen này và phân bổ một phần vào các hũ đầu tư."
-                        ) : (
-                          "Cảnh báo: Tỷ lệ tiết kiệm của bạn dưới 20% hoặc tài khoản đang chi vượt thu. Hãy rà soát lại các hũ chi tiêu không thiết yếu (Giải trí, Mua sắm) để cân đối dòng tiền."
-                        )}
-                      </p>
-                    </div>
-                  </div>
-
-                  <p className="text-[10px] text-slate-500 italic">💡 Lời khuyên: Hãy tuân thủ quy tắc 50/30/20 bằng cách trích ít nhất 20% thu nhập cho mục tiêu tiết kiệm ngay khi nhận lương.</p>
-                </div>
-              ) : (
-                /* Time Series Prophet Line Chart */
-                <div className="glass-card rounded-2xl p-6 border border-white/5 lg:col-span-7 flex flex-col justify-between">
-                  <div>
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-sm font-bold text-slate-300">Dự Báo Xu Hướng Chi Tiêu 30 Ngày Tiếp Theo</h3>
-                      <span className="bg-indigo-600/20 text-indigo-300 text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wide border border-indigo-500/20 flex items-center gap-1">
-                        <TrendingUp className="h-3 w-3 text-cyan-400" /> Prophet Engine Active
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-slate-500">Mô phỏng chuỗi thời gian dựa trên các giao dịch quá khứ và tính chu kỳ hàng tuần</p>
-                  </div>
-
-                  <div className="h-60 w-full mt-4">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={getForecastData()}>
-                        <defs>
-                          <linearGradient id="colorForecast" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#6366f1" stopOpacity={0.25} />
-                            <stop offset="95%" stopColor="#6366f1" stopOpacity={0.0} />
-                          </linearGradient>
-                        </defs>
-                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.02)" />
-                        <XAxis dataKey="date" stroke="rgba(255,255,255,0.2)" fontSize={9} />
-                        <YAxis stroke="rgba(255,255,255,0.2)" fontSize={9} width={45} tickFormatter={(val: number) => `${val / 1000}K`} />
-                        <Tooltip
-                          contentStyle={{ backgroundColor: "rgba(15, 23, 42, 0.95)", borderColor: "rgba(255,255,255,0.08)", color: "#fff", fontSize: "11px", borderRadius: "10px" }}
-                          formatter={(val: any) => [`${val.toLocaleString()} VND`, "Dự đoán"]}
-                        />
-                        <Area type="monotone" dataKey="Dự đoán" stroke="#6366f1" strokeWidth={2} fillOpacity={1} fill="url(#colorForecast)" />
-                      </AreaChart>
-                    </ResponsiveContainer>
-                  </div>
-
-                  <p className="text-[10px] text-slate-500 italic mt-2">📊 Ghi chú: Prophet dự báo các mốc cuối tuần sẽ tăng do có xu hướng giải trí dã ngoại tăng.</p>
-                </div>
-              )}
-
-            </div>
-
-            {/* Transactions Database Log list (Mini Preview) */}
-            <div className="glass-card rounded-2xl p-6 border border-white/5">
-              <div className="flex items-center justify-between mb-6">
-                <div>
-                  <h3 className="text-sm font-bold text-slate-300">Giao Giao Dịch Gần Đây</h3>
-                  <p className="text-[11px] text-slate-500">Hiển thị 5 giao dịch ghi nhận mới nhất</p>
-                </div>
-                <button
-                  onClick={() => setActiveTab("history")}
-                  className="text-xs text-indigo-400 hover:text-indigo-300 font-bold transition-all flex items-center gap-1.5"
-                >
-                  Xem tất cả lịch sử →
-                </button>
-              </div>
-
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead>
-                    <tr className="border-b border-white/5 text-slate-500">
-                      <th className="pb-3 font-semibold">Mô tả</th>
-                      <th className="pb-3 font-semibold">Ngày</th>
-                      <th className="pb-3 font-semibold">Danh mục</th>
-                      <th className="pb-3 font-semibold text-right">Số tiền</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-white/5">
-                    {transactions.slice(0, 5).map((tx) => (
-                      <tr key={tx.id} className="hover:bg-white/[0.01] transition-all">
-                        <td className="py-3 font-bold text-slate-200">{tx.description}</td>
-                        <td className="py-3 text-slate-400">{tx.transaction_date}</td>
-                        <td className="py-3">
-                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${tx.type === "income"
-                              ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
-                              : "bg-indigo-500/10 text-indigo-300 border border-indigo-500/20"
-                            }`}>
-                            {tx.category}
-                          </span>
-                        </td>
-                        <td className={`py-3 text-right font-extrabold ${tx.type === 'income' ? 'text-emerald-400' : 'text-rose-400'}`}>
-                          {tx.type === 'income' ? '+' : '-'}{tx.amount.toLocaleString()}đ
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-          </div>
+          <OverviewTab
+            transactions={transactions}
+            budgets={budgets}
+            monthlyIncome={monthlyIncome}
+            jarPercentages={jarPercentages}
+            onNavigateToTab={setActiveTab}
+          />
         )}
 
-        {/* TAB 6: FULL TRANSACTION HISTORY SCREEN */}
         {activeTab === "history" && (
-          <div className="space-y-8">
-            {/* Header section */}
-            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-              <div>
-                <h2 className="text-2xl font-extrabold text-white flex items-center gap-2">
-                  Lịch Sử Giao Dịch Thu Chi <Clock className="h-5 w-5 text-indigo-400" />
-                </h2>
-                <p className="text-slate-400 text-sm mt-0.5">
-                  Quản lý và theo dõi toàn bộ các khoản chi tiêu & thu nhập thực tế
-                </p>
-              </div>
-
-              <div className="flex gap-3">
-                <button
-                  onClick={() => setTransactions(INITIAL_TRANSACTIONS)}
-                  className="px-4 py-2.5 rounded-xl text-xs font-bold bg-slate-900 border border-white/5 hover:border-white/10 hover:text-indigo-400 text-slate-400 transition-all flex items-center gap-1.5"
-                >
-                  <RefreshCw className="h-3 w-3" /> Reset dữ liệu mẫu
-                </button>
-                <button
-                  onClick={() => {
-                    setType("expense");
-                    setActiveTab("add");
-                  }}
-                  className="px-4 py-2.5 rounded-xl text-xs font-bold bg-indigo-600 text-white glow-indigo hover:bg-indigo-500 transition-all flex items-center gap-1.5"
-                >
-                  <Plus className="h-4 w-4" /> Thêm giao dịch
-                </button>
-              </div>
-            </div>
-
-            {/* Filtering Controls */}
-            <div className="glass-card rounded-2xl p-6 border border-white/5 space-y-4">
-              <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
-                {/* Search Bar */}
-                <div className="relative w-full md:w-80">
-                  <input
-                    type="text"
-                    placeholder="Tìm mô tả, danh mục, cửa hàng..."
-                    value={historySearch}
-                    onChange={(e) => setHistorySearch(e.target.value)}
-                    className="w-full bg-slate-950 border border-white/5 rounded-xl pl-10 pr-4 py-2.5 text-xs focus:outline-none focus:border-indigo-500 text-slate-200"
-                  />
-                  <div className="absolute left-3 top-3.5 text-slate-400">
-                    <Search className="h-4 w-4" />
-                  </div>
-                </div>
-
-                {/* Sub Tab Segmented Buttons */}
-                <div className="flex bg-slate-950 p-1 rounded-xl border border-white/5 w-full md:w-auto">
-                  <button
-                    onClick={() => setHistoryFilter("all")}
-                    className={`flex-1 md:flex-none px-4 py-2 rounded-lg text-xs font-bold transition-all ${
-                      historyFilter === "all"
-                        ? "bg-indigo-600 text-white shadow-lg"
-                        : "text-slate-400 hover:text-slate-200"
-                    }`}
-                  >
-                    Tất cả ({transactions.length})
-                  </button>
-                  <button
-                    onClick={() => setHistoryFilter("income")}
-                    className={`flex-1 md:flex-none px-4 py-2 rounded-lg text-xs font-bold transition-all ${
-                      historyFilter === "income"
-                        ? "bg-emerald-600 text-white shadow-lg"
-                        : "text-slate-400 hover:text-slate-200"
-                    }`}
-                  >
-                    Thu nhập ({transactions.filter(t => t.type === "income").length})
-                  </button>
-                  <button
-                    onClick={() => setHistoryFilter("expense")}
-                    className={`flex-1 md:flex-none px-4 py-2 rounded-lg text-xs font-bold transition-all ${
-                      historyFilter === "expense"
-                        ? "bg-rose-600 text-white shadow-lg"
-                        : "text-slate-400 hover:text-slate-200"
-                    }`}
-                  >
-                    Chi tiêu ({transactions.filter(t => t.type === "expense").length})
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Transactions Database Table Card */}
-            <div className="glass-card rounded-2xl p-6 border border-white/5">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead>
-                    <tr className="border-b border-white/5 text-slate-500">
-                      <th className="pb-3 font-semibold">Mô tả</th>
-                      <th className="pb-3 font-semibold">Ngày thực hiện</th>
-                      <th className="pb-3 font-semibold">Danh mục</th>
-                      <th className="pb-3 font-semibold">Cửa hàng/Đơn vị</th>
-                      <th className="pb-3 font-semibold text-right">Số tiền</th>
-                      <th className="pb-3 font-semibold text-center">Hành động</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-white/5">
-                    {transactions
-                      .filter((tx) => {
-                        // filter type
-                        if (historyFilter !== "all" && tx.type !== historyFilter) return false;
-                        // filter search
-                        if (historySearch) {
-                          const query = historySearch.toLowerCase();
-                          const desc = (tx.description || "").toLowerCase();
-                          const cat = (tx.category || "").toLowerCase();
-                          const merchant = (tx.merchant_name || "").toLowerCase();
-                          return desc.includes(query) || cat.includes(query) || merchant.includes(query);
-                        }
-                        return true;
-                      })
-                      .map((tx) => (
-                        <tr key={tx.id} className="hover:bg-white/[0.01] transition-all">
-                          <td className="py-4 font-bold text-slate-200">{tx.description}</td>
-                          <td className="py-4 text-slate-400">{tx.transaction_date}</td>
-                          <td className="py-4">
-                            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
-                              tx.type === "income"
-                                ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
-                                : "bg-indigo-500/10 text-indigo-300 border border-indigo-500/20"
-                            }`}>
-                              {tx.category}
-                            </span>
-                          </td>
-                          <td className="py-4 text-slate-400">{tx.merchant_name || "-"}</td>
-                          <td className={`py-4 text-right font-extrabold ${tx.type === 'income' ? 'text-emerald-400' : 'text-rose-400'}`}>
-                            {tx.type === 'income' ? '+' : '-'}{tx.amount.toLocaleString()}đ
-                          </td>
-                          <td className="py-4 text-center flex items-center justify-center gap-1">
-                            <button onClick={() => handleStartEdit(tx)} className="text-slate-500 hover:text-indigo-400 p-1.5 rounded-lg hover:bg-indigo-500/10 transition-all" title="Chỉnh sửa">
-                              <Edit className="h-4 w-4" />
-                            </button>
-                            <button onClick={() => handleDeleteTransaction(tx.id)} className="text-slate-500 hover:text-rose-500 p-1.5 rounded-lg hover:bg-rose-500/10 transition-all" title="Xóa">
-                              <Trash2 className="h-4 w-4" />
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    {transactions
-                      .filter((tx) => {
-                        if (historyFilter !== "all" && tx.type !== historyFilter) return false;
-                        if (historySearch) {
-                          const query = historySearch.toLowerCase();
-                          const desc = (tx.description || "").toLowerCase();
-                          const cat = (tx.category || "").toLowerCase();
-                          const merchant = (tx.merchant_name || "").toLowerCase();
-                          return desc.includes(query) || cat.includes(query) || merchant.includes(query);
-                        }
-                        return true;
-                      }).length === 0 && (
-                        <tr>
-                          <td colSpan={6} className="py-8 text-center text-slate-500 text-xs">
-                            Không tìm thấy giao dịch nào khớp với bộ lọc.
-                          </td>
-                        </tr>
-                      )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
+          <HistoryTab
+            transactions={transactions}
+            onResetTransactions={handleResetTransactions}
+            onStartEdit={handleStartEdit}
+            onDeleteTransaction={handleDeleteTransaction}
+            onNavigateToAdd={() => setActiveTab("add")}
+          />
         )}
 
-        {/* TAB 2: MANUAL TRANSACTION ADD */}
         {activeTab === "add" && (
-          <div className="max-w-2xl mx-auto glass-card rounded-2xl p-8 border border-white/5 space-y-6">
-            <div>
-              <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                <Plus className="h-5 w-5 text-indigo-400" /> Thêm khoản Thu / Chi Mới
-              </h2>
-              <p className="text-slate-400 text-xs mt-1">Điền thông tin giao dịch để cập nhật ngân sách. Khi nhập mô tả, AI sẽ tự động đoán danh mục chi tiêu ở bên dưới.</p>
-            </div>
-
-            <form onSubmit={handleSaveTransaction} className="space-y-5">
-
-              <div className="grid grid-cols-2 gap-4">
-                {/* Type Choice */}
-                <div>
-                  <label className="text-xs text-slate-400 font-semibold block mb-2">Loại giao dịch</label>
-                  <select
-                    value={type}
-                    onChange={(e: any) => setType(e.target.value)}
-                    className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500 text-white font-bold"
-                  >
-                    <option value="expense">Khoản Chi Tiêu (-)</option>
-                    <option value="income">Khoản Thu Nhập (+)</option>
-                  </select>
-                </div>
-
-                {/* Date */}
-                <div>
-                  <label className="text-xs text-slate-400 font-semibold block mb-2">Ngày thực hiện</label>
-                  <input
-                    type="date"
-                    value={transactionDate}
-                    onChange={(e) => setTransactionDate(e.target.value)}
-                    className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500 text-white"
-                    required
-                  />
-                </div>
-              </div>
-
-              {/* Amount */}
-              <div>
-                <label className="text-xs text-slate-400 font-semibold block mb-2">Số tiền giao dịch (VND)</label>
-                <input
-                  type="text"
-                  placeholder="Ví dụ: 85.000"
-                  value={amount}
-                  onChange={(e) => setAmount(formatVNDString(e.target.value))}
-                  className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500 text-white font-extrabold"
-                  required
-                />
-              </div>
-
-              {/* Description & AI Predict */}
-              <div className="relative">
-                <label className="text-xs text-slate-400 font-semibold block mb-2">Mô tả giao dịch</label>
-                <input
-                  type="text"
-                  placeholder="Ví dụ: tra sua gongcha size L, di grab taxi ve nha..."
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500 text-white font-medium"
-                  required
-                />
-
-                {/* AI suggestion badge */}
-                {aiSuggestion && (
-                  <div className="mt-2.5 flex items-center gap-1.5 text-xs text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 px-3 py-1.5 rounded-xl w-fit font-semibold tracking-wide">
-                    <Sparkles className="h-3.5 w-3.5 animate-pulse text-cyan-400" />
-                    ✨ Dự đoán AI: Phân loại vào danh mục <b>{aiSuggestion}</b>
-                  </div>
-                )}
-              </div>
-
-              {/* Category */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="text-xs text-slate-400 font-semibold">Danh mục chi tiêu</label>
-                  <span className="text-[10px] text-slate-500">Mặc định Other để dùng gợi ý AI</span>
-                </div>
-                <select
-                  value={category}
-                  onChange={(e) => setCategory(e.target.value)}
-                  className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500 text-white"
-                >
-                  <option value="Other">Other (Dùng gợi ý AI)</option>
-                  <option value="Food & Beverage">Food & Beverage (Ăn uống)</option>
-                  <option value="Transportation">Transportation (Di chuyển)</option>
-                  <option value="Shopping">Shopping (Mua sắm)</option>
-                  <option value="Bills & Utilities">Bills & Utilities (Hóa đơn)</option>
-                  <option value="Entertainment">Entertainment (Giải trí)</option>
-                  <option value="Salary">Salary (Lương)</option>
-                </select>
-              </div>
-
-              {/* Merchant Store */}
-              <div>
-                <label className="text-xs text-slate-400 font-semibold block mb-2">Cửa hàng / Đối tác (Không bắt buộc)</label>
-                <input
-                  type="text"
-                  placeholder="Ví dụ: Highlands Coffee, Shopee..."
-                  value={merchant}
-                  onChange={(e) => setMerchant(e.target.value)}
-                  className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500 text-white"
-                />
-              </div>
-
-              {/* Actions */}
-              <div className="pt-3 flex gap-4">
-                <button type="submit" className="flex-1 py-3.5 rounded-xl bg-gradient-to-r from-indigo-600 to-cyan-500 hover:from-indigo-500 hover:to-cyan-400 text-white text-sm font-bold shadow-lg glow-indigo transition-all duration-200">
-                  Lưu Giao Dịch
-                </button>
-                <button type="button" onClick={() => setActiveTab("overview")} className="px-6 py-3.5 rounded-xl bg-slate-900 border border-white/5 hover:border-white/10 text-slate-400 text-sm font-bold transition-all duration-200">
-                  Hủy bỏ
-                </button>
-              </div>
-
-            </form>
-          </div>
+          <AddTransactionTab
+            onSave={handleSaveTransaction}
+            onCancel={() => setActiveTab("overview")}
+            initialType="expense"
+          />
         )}
 
-        {/* TAB 3: AI BILL OCR - RECONCILIATION SPLIT-SCREEN WORKFLOW */}
         {activeTab === "ocr" && (
-          <div className="max-w-6xl mx-auto space-y-8">
-
-            <div className="text-center space-y-2">
-              <span className="bg-gradient-to-r from-indigo-500 to-cyan-400 text-white text-[10px] px-3 py-1 rounded-full font-bold uppercase tracking-wider glow-indigo">AI Computer Vision & LayoutLMv3</span>
-              <h2 className="text-2xl font-extrabold text-white">Quét Hóa Đơn Chi Tiêu Thông Minh</h2>
-              <p className="text-slate-400 text-xs max-w-lg mx-auto">Tải lên ảnh hóa đơn của bạn. Mô hình học sâu **LayoutLMv3** sẽ tự động trích xuất thông tin, điền vào biểu mẫu để bạn rà soát và lưu.</p>
-            </div>
-
-            {/* Error Message display */}
-            {ocrError && (
-              <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs font-semibold flex items-center gap-2 max-w-2xl mx-auto animate-pulse">
-                <AlertTriangle className="h-4.5 w-4.5 text-rose-500" />
-                <span>Lỗi: {ocrError}</span>
-              </div>
-            )}
-
-            {/* Drag & Drop Upload Zone (Visible when not succeeded yet) */}
-            {!ocrSuccess && (
-              <div
-                onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
-                onDragLeave={() => setDragActive(false)}
-                onDrop={(e) => { e.preventDefault(); setDragActive(false); handleOcrFileSubmit(e.dataTransfer.files); }}
-                className={`border-2 border-dashed rounded-2xl p-10 text-center transition-all duration-300 relative overflow-hidden flex flex-col items-center justify-center min-h-60 max-w-3xl mx-auto ${dragActive
-                    ? "border-indigo-500 bg-indigo-500/10"
-                    : "border-white/10 bg-slate-950/20 hover:border-indigo-500/30 hover:bg-slate-950/40"
-                  }`}
-              >
-                {ocrLoading ? (
-                  <div className="space-y-4">
-                    <div className="relative flex items-center justify-center">
-                      <RefreshCw className="h-10 w-10 text-indigo-400 animate-spin" />
-                      <Sparkles className="h-5 w-5 text-cyan-300 absolute animate-pulse" />
-                    </div>
-                    <div>
-                      <h4 className="font-bold text-white text-sm">AI OCR đang phân tích hóa đơn...</h4>
-                      <p className="text-xs text-slate-500 mt-1">Mô hình LayoutLMv3 đang trích xuất Merchant, Total Amount và Ngày giao dịch</p>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="space-y-4 flex flex-col items-center">
-                    <div className="h-12 w-12 rounded-xl bg-indigo-500/10 border border-indigo-500/25 flex items-center justify-center text-indigo-400">
-                      <UploadCloud className="h-6 w-6" />
-                    </div>
-
-                    <div>
-                      <label className="cursor-pointer">
-                        <span className="text-sm font-bold text-indigo-400 hover:underline">Click để chọn file ảnh hóa đơn</span>
-                        <input
-                          type="file"
-                          className="hidden"
-                          accept="image/*"
-                          onChange={(e) => handleOcrFileSubmit(e.target.files)}
-                        />
-                      </label>
-                      <p className="text-xs text-slate-500 mt-1">hoặc kéo thả ảnh biên lai (JPEG, PNG, WebP) vào đây</p>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Split Screen Reconciliation Form (Visible on success) */}
-            {ocrSuccess && ocrExtractedData && (
-              <div className="space-y-6">
-                {ocrExtractedData.is_mock && (
-                  <div className="p-5 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-slate-300 text-xs leading-relaxed max-w-4xl mx-auto flex gap-3.5 shadow-xl">
-                    <AlertTriangle className="h-5.5 w-5.5 text-amber-500 shrink-0 mt-0.5 animate-pulse" />
-                    <div>
-                      <h5 className="font-extrabold text-amber-400 text-sm">⚠️ Đang hoạt động ở chế độ giả lập (Mock Data)</h5>
-                      <p className="mt-1 text-slate-400">
-                        Hệ thống đang chạy chế độ giả lập vì: <span className="text-amber-400 font-semibold">{ocrExtractedData.debug_message}</span>.
-                      </p>
-                      <div className="mt-3 p-3.5 rounded-xl bg-slate-950/60 border border-white/5 space-y-2 text-[11px]">
-                        <p className="font-bold text-slate-300">Để kích hoạt mô hình LayoutLMv3 đã train của bạn từ Google Colab:</p>
-                        <ol className="list-decimal pl-4 space-y-1.5 text-slate-400">
-                          <li>Cài đặt các gói AI trên máy tính cục bộ:
-                            <code className="bg-slate-900 text-indigo-300 px-1.5 py-0.5 rounded ml-1 font-mono">pip install torch transformers paddleocr pillow</code>
-                          </li>
-                          <li>Tải thư mục trọng số của mô hình LayoutLMv3 đã huấn luyện từ Colab/Drive về máy.</li>
-                          <li>Đổi tên thư mục thành <code className="bg-slate-900 text-indigo-300 px-1.5 py-0.5 rounded font-mono">layoutlmv3-receipt</code> và đặt tại đường dẫn:
-                            <code className="bg-slate-900 text-indigo-300 px-1.5 py-0.5 rounded block mt-1 font-mono w-fit">backend/app/ml_models/layoutlmv3-receipt/</code>
-                          </li>
-                        </ol>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-
-                  {/* COLUMN 1: Bill image original preview & raw text logs */}
-                  <div className="lg:col-span-5 space-y-6">
-                    {/* Image Card Container */}
-                    <div className="glass-card rounded-2xl p-6 border border-white/5 space-y-4">
-                      <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
-                        <FileText className="h-4.5 w-4.5 text-indigo-400" /> Ảnh Biên Lai Gốc
-                      </h3>
-
-                      <div className="relative aspect-[3/4] max-h-[460px] w-full rounded-xl overflow-hidden bg-slate-950 border border-white/5 flex items-center justify-center group shadow-2xl">
-                        {ocrPreviewUrl ? (
-                          <img
-                            src={ocrPreviewUrl}
-                            alt="Scanned Bill Receipt"
-                            className="h-full w-full object-contain transition-transform duration-300 hover:scale-105"
-                          />
-                        ) : ocrExtractedData.image_url ? (
-                          <img
-                            src={`http://localhost:8000${ocrExtractedData.image_url}`}
-                            alt="Scanned Bill Receipt"
-                            className="h-full w-full object-contain transition-transform duration-300 hover:scale-105"
-                          />
-                        ) : (
-                          <div className="text-slate-500 text-xs flex flex-col items-center gap-2">
-                            <AlertTriangle className="h-6 w-6 text-amber-500" />
-                            Không có ảnh hóa đơn để xem trước
-                          </div>
-                        )}
-                        <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end justify-center pb-4 pointer-events-none">
-                          <span className="text-[10px] text-slate-300 font-semibold">Hover phóng to ảnh để đối chiếu</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Raw Text Logs Container */}
-                    <div className="glass-card rounded-2xl p-5 border border-white/5 space-y-3">
-                      <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Văn Bản Thô OCR Trích Xuất</h3>
-                      <div className="p-3.5 rounded-xl bg-slate-950 font-mono text-[9px] text-indigo-300 whitespace-pre-line border border-indigo-500/10 max-h-40 overflow-y-auto leading-relaxed">
-                        {ocrExtractedData.extracted_text}
-                      </div>
-                      <span className="text-[10px] text-slate-500 italic block">Công nghệ OCR trích xuất hộp chữ tọa độ 2D</span>
-                    </div>
-                  </div>
-
-                  {/* COLUMN 2: Pre-populated Transaction form editable */}
-                  <div className="lg:col-span-7 glass-card rounded-2xl p-6 border border-white/5 space-y-6">
-                    <div>
-                      <h3 className="text-sm font-bold text-white flex items-center gap-1.5">
-                        <Sparkles className="h-4.5 w-4.5 text-cyan-400" /> Form Chỉnh Sửa & Ghi Nhận
-                      </h3>
-                      <p className="text-[11px] text-slate-400 mt-1">Dữ liệu được trích xuất tự động bằng mô hình AI. Bạn có thể kiểm tra chéo với ảnh bên trái và điều chỉnh các ô nhập bên dưới trước khi lưu.</p>
-                    </div>
-
-                    <form
-                      onSubmit={(e) => {
-                        e.preventDefault();
-                        const rawAmount = Number(cleanVNDString(amount));
-                        if (!rawAmount || isNaN(rawAmount)) return;
-
-                        // Save OCR transaction to backend
-                        api.createTransaction({
-                          amount: rawAmount,
-                          type: "expense",
-                          category: category,
-                          description: description || `Quét hóa đơn ${merchant}`,
-                          transaction_date: transactionDate,
-                          merchant_name: merchant || undefined,
-                          ocr_log_id: ocrExtractedData?.ocr_log_id
-                        })
-                          .then(savedTx => {
-                            setTransactions(prev => [savedTx, ...prev]);
-
-                            // Update budget limits on the fly!
-                            setBudgets(prev => prev.map(b => {
-                              if (b.category === category) {
-                                return { ...b, spent_amount: b.spent_amount + rawAmount };
-                              }
-                              return b;
-                            }));
-                            mutate("transactions");
-                            mutate("budgets");
-                          })
-                          .catch(err => {
-                            console.error("Failed to save OCR transaction:", err);
-                            // Local only fallback
-                            const newTx: Transaction = {
-                              id: Date.now().toString(),
-                              amount: rawAmount,
-                              type: "expense",
-                              category: category,
-                              description: description || `Quét hóa đơn ${merchant}`,
-                              transaction_date: transactionDate,
-                              merchant_name: merchant || undefined
-                            };
-                            setTransactions(prev => [newTx, ...prev]);
-                          });
-
-                        // Reset scanner states
-                        setOcrSuccess(false);
-                        setOcrExtractedData(null);
-                        setOcrPreviewUrl(null);
-                        setOcrError(null);
-
-                        // Redirect to dashboard overview
-                        setActiveTab("overview");
-                      }}
-                      className="space-y-4 text-xs"
-                    >
-
-                      {/* Store Name / Merchant */}
-                      <div>
-                        <label className="text-slate-400 block mb-1.5 font-bold">Cửa hàng / Đối tác (Merchant)</label>
-                        <input
-                          type="text"
-                          value={merchant}
-                          onChange={(e) => setMerchant(e.target.value)}
-                          className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3 font-semibold text-white focus:outline-none focus:border-indigo-500"
-                          placeholder="Ví dụ: Highlands Coffee, WinMart..."
-                          required
-                        />
-                      </div>
-
-                      {/* Total Amount */}
-                      <div>
-                        <label className="text-slate-400 block mb-1.5 font-bold">Tổng số tiền giao dịch (VND)</label>
-                        <input
-                          type="text"
-                          value={amount}
-                          onChange={(e) => setAmount(formatVNDString(e.target.value))}
-                          className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3 font-extrabold text-emerald-400 focus:outline-none focus:border-indigo-500 text-sm"
-                          placeholder="Ví dụ: 85.000"
-                          required
-                        />
-                      </div>
-
-                      {/* Category Selector */}
-                      <div>
-                        <label className="text-slate-400 block mb-1.5 font-bold">Danh mục chi tiêu (AI Gợi Ý: {ocrExtractedData.category})</label>
-                        <select
-                          value={category}
-                          onChange={(e) => setCategory(e.target.value)}
-                          className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3 text-slate-300 focus:outline-none focus:border-indigo-500"
-                        >
-                          <option value="Food & Beverage">Food & Beverage (Ăn uống)</option>
-                          <option value="Transportation">Transportation (Di chuyển)</option>
-                          <option value="Shopping">Shopping (Mua sắm)</option>
-                          <option value="Bills & Utilities">Bills & Utilities (Hóa đơn)</option>
-                          <option value="Entertainment">Entertainment (Giải trí)</option>
-                          <option value="Other">Other (Khác)</option>
-                        </select>
-                      </div>
-
-                      {/* Transaction Date */}
-                      <div>
-                        <label className="text-slate-400 block mb-1.5 font-bold">Ngày ghi nhận</label>
-                        <input
-                          type="date"
-                          value={transactionDate}
-                          onChange={(e) => setTransactionDate(e.target.value)}
-                          className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-indigo-500"
-                          required
-                        />
-                      </div>
-
-                      {/* Description Note */}
-                      <div>
-                        <label className="text-slate-400 block mb-1.5 font-bold">Mô tả / Ghi chú</label>
-                        <input
-                          type="text"
-                          value={description}
-                          onChange={(e) => setDescription(e.target.value)}
-                          className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3 text-slate-300 focus:outline-none focus:border-indigo-500"
-                          placeholder="Nội dung chi tiêu..."
-                        />
-                      </div>
-
-                      {/* Submit and Cancel Buttons */}
-                      <div className="pt-4 flex gap-4">
-                        <button
-                          type="submit"
-                          className="flex-1 py-3.5 rounded-xl bg-gradient-to-r from-emerald-600 to-indigo-600 hover:from-emerald-500 hover:to-indigo-500 text-white text-xs font-bold transition-all glow-indigo"
-                        >
-                          Lưu Khoản Chi & Đóng Form
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setOcrSuccess(false);
-                            setOcrExtractedData(null);
-                            setOcrPreviewUrl(null);
-                            setOcrError(null);
-                          }}
-                          className="px-5 py-3.5 rounded-xl bg-slate-900 border border-white/5 hover:border-white/10 text-slate-400 text-xs font-bold transition-all"
-                        >
-                          Hủy & Quét lại
-                        </button>
-                      </div>
-
-                    </form>
-                  </div>
-
-                </div>
-              </div>
-            )}
-
-            {/* AI Developers tip */}
-            <div className="p-5 rounded-2xl bg-indigo-950/20 border border-indigo-500/20 flex gap-3 text-xs text-indigo-300 max-w-4xl mx-auto">
-              <Sparkles className="h-5 w-5 text-cyan-400 shrink-0 animate-pulse" />
-              <div>
-                <h5 className="font-bold text-white">Cơ Chế Liên Kết Mô Hình LayoutLMv3 Thực Tế:</h5>
-                <p className="mt-1 leading-relaxed text-[11px] text-slate-400">
-                  Tệp ảnh được upload trực tiếp từ máy của bạn qua endpoint `/api/v1/ocr/upload` của FastAPI. Backend lưu trữ tệp tin trong thư mục tĩnh tĩnh `/static/uploads/`, truyền đường dẫn cục bộ vào mô hình LayoutLMv3 huấn luyện, và trả về dữ liệu đối chiếu chính xác.
-                </p>
-              </div>
-            </div>
-
-          </div>
+          <OcrTab
+            onSaveSuccess={handleOcrSaveSuccess}
+            onCancel={() => setActiveTab("overview")}
+          />
         )}
 
-        {/* TAB 4: BUDGET MANAGEMENT */}
-        {activeTab === "budgets" && (() => {
-          const totalPercent = Object.values(jarPercentages).reduce((a, b) => a + b, 0);
+        {activeTab === "budgets" && (
+          <BudgetsTab
+            monthlyIncome={monthlyIncome}
+            setMonthlyIncome={setMonthlyIncome}
+            jarPercentages={jarPercentages}
+            setJarPercentages={setJarPercentages}
+            budgets={budgets}
+            setBudgets={setBudgets}
+            mutate={mutate}
+          />
+        )}
 
-          const applyPreset503020 = () => {
-            setJarPercentages({
-              "Food & Beverage": 30,
-              "Transportation": 10,
-              "Shopping": 15,
-              "Bills & Utilities": 10,
-              "Entertainment": 15,
-              "Other": 20
-            });
-          };
-
-          const applyPreset6Jars = () => {
-            setJarPercentages({
-              "Food & Beverage": 35,
-              "Transportation": 10,
-              "Shopping": 15,
-              "Bills & Utilities": 10,
-              "Entertainment": 15,
-              "Other": 15
-            });
-          };
-
-          const handlePercentageChange = (cat: string, val: number) => {
-            setJarPercentages(prev => {
-              const updated = { ...prev, [cat]: val };
-              return updated;
-            });
-          };
-
-          const handleSaveJars = () => {
-            if (totalPercent !== 100) return;
-
-            const promises = Object.entries(jarPercentages).map(([cat, pct]) => {
-              const limit = Math.round((pct / 100) * monthlyIncome);
-              return api.createOrUpdateBudget({
-                category: cat,
-                limit_amount: limit,
-                period: "monthly"
-              });
-            });
-
-            Promise.all(promises)
-              .then(() => {
-                setBudgets(prev => {
-                  return Object.entries(jarPercentages).map(([cat, pct]) => {
-                    const limit = Math.round((pct / 100) * monthlyIncome);
-                    const existing = prev.find(b => b.category === cat);
-                    return {
-                      category: cat,
-                      limit_amount: limit,
-                      spent_amount: existing ? existing.spent_amount : 0
-                    };
-                  });
-                });
-                mutate("budgets");
-                alert("Phân chia hũ ngân sách thành công!");
-              })
-              .catch(err => {
-                console.error("Failed to save all budget jars:", err);
-                // Fallback local update
-                setBudgets(prev => {
-                  return Object.entries(jarPercentages).map(([cat, pct]) => {
-                    const limit = Math.round((pct / 100) * monthlyIncome);
-                    const existing = prev.find(b => b.category === cat);
-                    return {
-                      category: cat,
-                      limit_amount: limit,
-                      spent_amount: existing ? existing.spent_amount : 0
-                    };
-                  });
-                });
-              });
-          };
-
-          return (
-            <div className="max-w-6xl mx-auto space-y-6">
-              <div>
-                <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                  <Wallet className="h-5 w-5 text-indigo-400" /> Quản Lý Hũ Chi Tiêu (Timo & MoMo Jars)
-                </h2>
-                <p className="text-slate-400 text-xs mt-1">Thiết lập tổng thu nhập hàng tháng và phân bổ tiền vào các hũ tài chính để kiểm soát chi tiêu tối ưu.</p>
-              </div>
-
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-                {/* LEFT PANEL: INCOME & ALLOCATOR SLIDERS */}
-                <div className="lg:col-span-6 glass-card rounded-2xl p-6 border border-white/5 space-y-6">
-                  <div>
-                    <h3 className="text-sm font-bold text-slate-300">1. Nhập Tổng Thu Nhập / Lương</h3>
-                    <p className="text-[10px] text-slate-500 mt-0.5">Số tiền nền tảng để chia tỷ lệ phần trăm các hũ</p>
-                    <div className="mt-3 relative">
-                      <input
-                        type="text"
-                        value={formatVNDString(monthlyIncome)}
-                        onChange={(e) => setMonthlyIncome(Number(cleanVNDString(e.target.value)) || 0)}
-                        className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3 text-sm text-emerald-400 font-extrabold focus:outline-none focus:border-indigo-500"
-                        placeholder="Ví dụ: 15.000.000"
-                      />
-                      <span className="absolute right-4 top-3 text-xs text-slate-500 font-bold">VND</span>
-                    </div>
-                  </div>
-
-                  {/* PRESETS */}
-                  <div className="space-y-2">
-                    <label className="text-[11px] text-slate-400 font-bold block">2. Chọn quy tắc chia hũ nhanh</label>
-                    <div className="grid grid-cols-2 gap-3">
-                      <button
-                        onClick={applyPreset503020}
-                        className="py-2.5 rounded-xl bg-slate-900 border border-white/5 hover:border-indigo-500/30 text-[10px] text-slate-300 font-bold transition-all hover:bg-slate-950"
-                      >
-                        Quy tắc 50 / 30 / 20
-                      </button>
-                      <button
-                        onClick={applyPreset6Jars}
-                        className="py-2.5 rounded-xl bg-slate-900 border border-white/5 hover:border-indigo-500/30 text-[10px] text-slate-300 font-bold transition-all hover:bg-slate-950"
-                      >
-                        Quy tắc 6 Hũ Tài Chính
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* SLIDERS LIST */}
-                  <div className="space-y-4">
-                    <div className="flex justify-between items-center">
-                      <label className="text-[11px] text-slate-400 font-bold">3. Điều chỉnh tỷ lệ phần trăm</label>
-                      <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${totalPercent === 100 ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" : "bg-rose-500/10 text-rose-400 border border-rose-500/20"}`}>
-                        Tổng: {totalPercent}% / 100%
-                      </span>
-                    </div>
-
-                    <div className="space-y-3.5">
-                      {Object.entries(jarPercentages).map(([cat, pct]) => {
-                        const amount = Math.round((pct / 100) * monthlyIncome);
-                        let name = cat;
-                        if (cat === "Food & Beverage") name = "Ăn uống & Ẩm thực";
-                        if (cat === "Transportation") name = "Di chuyển & Xe cộ";
-                        if (cat === "Shopping") name = "Mua sắm & Shopping";
-                        if (cat === "Bills & Utilities") name = "Hóa đơn & Tiện ích";
-                        if (cat === "Entertainment") name = "Giải trí & Vui chơi";
-                        if (cat === "Other") name = "Tích lũy & Dự phòng";
-
-                        return (
-                          <div key={cat} className="p-3 rounded-xl bg-slate-900/50 border border-white/5 space-y-2">
-                            <div className="flex justify-between items-center text-xs">
-                              <span className="font-bold text-slate-300">{name}</span>
-                              <span className="font-extrabold text-indigo-400">{pct}% <span className="text-[10px] text-slate-500">({amount.toLocaleString()}đ)</span></span>
-                            </div>
-                            <input
-                              type="range"
-                              min="0"
-                              max="100"
-                              step="5"
-                              value={pct}
-                              onChange={(e) => handlePercentageChange(cat, Number(e.target.value))}
-                              className="w-full h-1 bg-slate-950 rounded-lg appearance-none cursor-pointer accent-indigo-500"
-                            />
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* SAVE ALLOCATION BUTTON */}
-                  <button
-                    onClick={handleSaveJars}
-                    disabled={totalPercent !== 100}
-                    className="w-full py-3.5 rounded-xl bg-gradient-to-r from-indigo-600 to-cyan-500 hover:from-indigo-500 hover:to-cyan-400 text-white text-xs font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed glow-indigo"
-                  >
-                    {totalPercent === 100 ? "Lưu & Phân bổ Hũ Ngân Sách" : `Tỷ lệ chưa cân bằng (Hiện tại: ${totalPercent}%)`}
-                  </button>
-                </div>
-
-                {/* RIGHT PANEL: TIMO/MOMO JARS DISPLAY VISUAL */}
-                <div className="lg:col-span-6 space-y-6">
-                  <div className="glass-card rounded-2xl p-6 border border-white/5 space-y-4">
-                    <h3 className="text-sm font-bold text-slate-300">Tổng Quan Hũ Ngân Sách</h3>
-                    <p className="text-[10px] text-slate-500">Tiến độ chi tiêu thực tế của các hũ so với hạn mức</p>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      {Object.entries(jarPercentages).map(([cat, pct]) => {
-                        const limit = Math.round((pct / 100) * monthlyIncome);
-                        const b = budgets.find(x => x.category === cat) || { spent_amount: 0, limit_amount: limit };
-                        const percent = Math.min(100, Math.round((b.spent_amount / limit) * 100));
-                        const remaining = Math.max(0, limit - b.spent_amount);
-
-                        let name = cat;
-                        let emoji = "🍔";
-                        let colorClass = "from-amber-500 to-orange-600";
-                        if (cat === "Food & Beverage") { name = "Ăn uống"; emoji = "☕"; colorClass = "from-orange-500 to-red-600"; }
-                        if (cat === "Transportation") { name = "Di chuyển"; emoji = "🚗"; colorClass = "from-cyan-500 to-blue-600"; }
-                        if (cat === "Shopping") { name = "Mua sắm"; emoji = "🛍️"; colorClass = "from-pink-500 to-rose-600"; }
-                        if (cat === "Bills & Utilities") { name = "Hóa đơn"; emoji = "⚡"; colorClass = "from-yellow-500 to-amber-600"; }
-                        if (cat === "Entertainment") { name = "Giải trí"; emoji = "🎬"; colorClass = "from-purple-500 to-indigo-600"; }
-                        if (cat === "Other") { name = "Tích lũy"; emoji = "🐖"; colorClass = "from-emerald-500 to-teal-600"; }
-
-                        return (
-                          <div key={cat} className="p-4 rounded-2xl bg-slate-900 border border-white/5 flex flex-col justify-between space-y-3 hover:border-white/10 transition-all">
-                            <div className="flex items-center justify-between">
-                              <span className="text-2xl">{emoji}</span>
-                              <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold bg-white/5 border border-white/10 text-slate-400`}>
-                                {pct}% hũ
-                              </span>
-                            </div>
-
-                            <div>
-                              <h4 className="font-extrabold text-white text-xs">{name}</h4>
-                              <p className="text-[10px] text-slate-500 mt-0.5">Hạn mức: {limit.toLocaleString()}đ</p>
-                            </div>
-
-                            <div className="space-y-1.5">
-                              <div className="flex justify-between text-[9px] text-slate-400">
-                                <span>Đã chi: {b.spent_amount.toLocaleString()}đ</span>
-                                <span>{percent}%</span>
-                              </div>
-                              <div className="h-1.5 w-full bg-slate-950 rounded-full overflow-hidden">
-                                <div
-                                  className={`h-full rounded-full bg-gradient-to-r ${colorClass}`}
-                                  style={{ width: `${percent}%` }}
-                                />
-                              </div>
-                            </div>
-
-                            <div className="pt-1.5 border-t border-white/5 flex justify-between items-center text-[9px]">
-                              <span className="text-slate-500">Còn lại:</span>
-                              <span className={`font-bold ${percent >= 90 ? "text-rose-400" : percent >= 75 ? "text-amber-400" : "text-emerald-400"}`}>
-                                {remaining.toLocaleString()}đ
-                              </span>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          );
-        })()}
-
-        {/* TAB 5: SECURITY / CHANGE PASSWORD */}
         {activeTab === "security" && (
-          <div className="max-w-md mx-auto glass-card rounded-2xl p-8 border border-white/5 space-y-6">
-            <div>
-              <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                <Lock className="h-5 w-5 text-indigo-400" /> Thay Đổi Mật Khẩu
-              </h2>
-              <p className="text-slate-400 text-xs mt-1">Vui lòng điền thông tin bên dưới để đổi mật khẩu truy cập của bạn.</p>
-            </div>
-
-            <form
-              onSubmit={async (e) => {
-                e.preventDefault();
-                setSecurityError(null);
-                setSecuritySuccess(null);
-
-                if (newPassword !== confirmPassword) {
-                  setSecurityError("Mật khẩu mới và xác nhận mật khẩu không khớp");
-                  return;
-                }
-
-                setSecurityLoading(true);
-
-                try {
-                  await api.changePassword(oldPassword, newPassword);
-                  setSecuritySuccess("Đổi mật khẩu thành công!");
-                  setOldPassword("");
-                  setNewPassword("");
-                  setConfirmPassword("");
-                } catch (err: any) {
-                  setSecurityError(err.message || "Không thể đổi mật khẩu. Vui lòng kiểm tra lại mật khẩu cũ.");
-                } finally {
-                  setSecurityLoading(false);
-                }
-              }}
-              className="space-y-4"
-            >
-              {securityError && (
-                <div className="p-3 text-xs bg-rose-500/10 border border-rose-500/20 text-rose-400 rounded-xl font-medium">
-                  ⚠️ {securityError}
-                </div>
-              )}
-
-              {securitySuccess && (
-                <div className="p-3 text-xs bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-xl font-medium">
-                  ✓ {securitySuccess}
-                </div>
-              )}
-
-              {/* Old Password */}
-              <div className="space-y-1">
-                <label className="text-xs text-slate-400 font-semibold block">Mật khẩu cũ</label>
-                <input
-                  type="password"
-                  value={oldPassword}
-                  onChange={(e) => setOldPassword(e.target.value)}
-                  className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3 text-xs text-white"
-                  required
-                />
-              </div>
-
-              {/* New Password */}
-              <div className="space-y-1">
-                <label className="text-xs text-slate-400 font-semibold block">Mật khẩu mới (tối thiểu 6 ký tự)</label>
-                <input
-                  type="password"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3 text-xs text-white"
-                  minLength={6}
-                  required
-                />
-              </div>
-
-              {/* Confirm Password */}
-              <div className="space-y-1">
-                <label className="text-xs text-slate-400 font-semibold block">Xác nhận mật khẩu mới</label>
-                <input
-                  type="password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3 text-xs text-white"
-                  minLength={6}
-                  required
-                />
-              </div>
-
-              {/* Actions */}
-              <button
-                type="submit"
-                disabled={securityLoading}
-                className="w-full py-3.5 rounded-xl bg-gradient-to-r from-indigo-600 to-cyan-500 text-white text-xs font-bold transition-all glow-indigo flex items-center justify-center gap-2"
-              >
-                {securityLoading ? (
-                  <span className="border-2 border-white/30 border-t-white h-4 w-4 rounded-full animate-spin"></span>
-                ) : (
-                  "Cập nhật mật khẩu"
-                )}
-              </button>
-            </form>
-          </div>
+          <SecurityTab />
         )}
       </main>
 
@@ -2329,8 +832,8 @@ export default function Dashboard() {
                   {chatMessages.map((msg, index) => (
                     <div key={index} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
                       <div className={`max-w-[85%] rounded-2xl p-3 text-xs leading-relaxed ${msg.role === "user"
-                          ? "bg-gradient-to-r from-indigo-600 to-cyan-500 text-white font-medium rounded-tr-none shadow-md"
-                          : "bg-slate-900 border border-white/5 text-slate-300 rounded-tl-none"
+                        ? "bg-gradient-to-r from-indigo-600 to-cyan-500 text-white font-medium rounded-tr-none shadow-md"
+                        : "bg-slate-900 border border-white/5 text-slate-300 rounded-tl-none"
                         }`}>
                         {renderMessageContent(msg.content)}
                       </div>
@@ -2512,18 +1015,30 @@ export default function Dashboard() {
 
               {/* Category Selector */}
               <div>
-                <label className="text-slate-400 block mb-1.5 font-bold">Danh mục chi tiêu</label>
+                <label className="text-slate-400 block mb-1.5 font-bold">Danh mục giao dịch</label>
                 <select
                   value={editCategory}
                   onChange={(e) => setEditCategory(e.target.value)}
                   className="w-full bg-slate-900 border border-white/5 rounded-xl px-3 py-2 text-slate-300 focus:outline-none focus:border-indigo-500"
                 >
-                  <option value="Food & Beverage">Food & Beverage (Ăn uống)</option>
-                  <option value="Transportation">Transportation (Di chuyển)</option>
-                  <option value="Shopping">Shopping (Mua sắm)</option>
-                  <option value="Bills & Utilities">Bills & Utilities (Hóa đơn)</option>
-                  <option value="Entertainment">Entertainment (Giải trí)</option>
-                  <option value="Other">Other (Khác)</option>
+                  {editType === "income" ? (
+                    <>
+                      <option value="Salary">Salary (Lương cố định)</option>
+                      <option value="Bonus">Bonus (Tiền thưởng)</option>
+                      <option value="Business">Business (Kinh doanh / Bán hàng)</option>
+                      <option value="Investment">Investment (Đầu tư / Lãi tiết kiệm)</option>
+                      <option value="Other Income">Other Income (Thu nhập khác)</option>
+                    </>
+                  ) : (
+                    <>
+                      <option value="Other">Other (Khác)</option>
+                      <option value="Food & Beverage">Food & Beverage (Ăn uống)</option>
+                      <option value="Transportation">Transportation (Di chuyển)</option>
+                      <option value="Shopping">Shopping (Mua sắm)</option>
+                      <option value="Bills & Utilities">Bills & Utilities (Hóa đơn)</option>
+                      <option value="Entertainment">Entertainment (Giải trí)</option>
+                    </>
+                  )}
                 </select>
               </div>
 
@@ -2557,6 +1072,22 @@ export default function Dashboard() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* GLOBAL GLASS LOADING BACKDROP TOAST OVERLAY */}
+      {globalLoadingMessage && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="glass-card rounded-2xl p-6 border border-white/10 flex flex-col items-center justify-center space-y-4 max-w-xs text-center shadow-2xl animate-fade-in">
+            <div className="relative flex items-center justify-center">
+              <div className="h-12 w-12 rounded-full border-2 border-indigo-500/20 border-t-indigo-500 animate-spin" />
+              <Sparkles className="absolute h-5 w-5 text-cyan-400 animate-pulse" />
+            </div>
+            <div>
+              <p className="text-xs font-bold text-white tracking-wide">{globalLoadingMessage}</p>
+              <p className="text-[10px] text-slate-500 mt-1">Vui lòng đợi trong giây lát</p>
+            </div>
           </div>
         </div>
       )}
