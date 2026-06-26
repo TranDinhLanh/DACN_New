@@ -35,6 +35,10 @@ def create_recurring_template(
     current_user: User = Depends(get_current_user)
 ):
     """Tao moi mot lich trinh dinh ky."""
+    from datetime import date, datetime, timezone
+    from app.models.models import Transaction
+    from app.services.recurring_service import calculate_next_run_date
+
     next_run = calculate_initial_next_run_date(
         start_date=payload.start_date,
         frequency=payload.frequency,
@@ -57,6 +61,34 @@ def create_recurring_template(
         is_auto_execute=payload.is_auto_execute
     )
     db.add(template)
+    db.flush()  # Gen ID/created_at
+
+    today = date.today()
+    if next_run <= today and payload.is_auto_execute:
+        new_tx = Transaction(
+            user_id=current_user.id,
+            amount=payload.amount,
+            type=payload.type,
+            category=payload.category,
+            description=payload.description or f"Giao dich dinh ky: {payload.category}",
+            transaction_date=today
+        )
+        db.add(new_tx)
+
+        # Calculate next execution date
+        next_date = calculate_next_run_date(
+            current_date=next_run,
+            frequency=payload.frequency,
+            original_created_at=template.created_at or datetime.now(timezone.utc),
+            day_of_week=payload.day_of_week,
+            day_of_month=payload.day_of_month
+        )
+
+        if payload.end_date and next_date > payload.end_date:
+            template.is_active = False
+        else:
+            template.next_run_date = next_date
+
     db.commit()
     db.refresh(template)
     return template

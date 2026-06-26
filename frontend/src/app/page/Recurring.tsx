@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { api } from "@/lib/api";
+import { mutate } from "swr";
 import {
   RefreshCw, Plus, Trash2, Edit, X, Check,
   Calendar, Repeat, Clock, TrendingDown, TrendingUp,
@@ -146,6 +147,9 @@ export default function RecurringTab({ templates, isLoading, onRefresh }: Recurr
       } else {
         await api.createRecurringTemplate(payload);
       }
+      // Revalidate cache for transactions and budgets to update Overview and History tabs
+      mutate("transactions");
+      mutate("budgets");
       onRefresh();
       closeForm();
     } catch (err: any) {
