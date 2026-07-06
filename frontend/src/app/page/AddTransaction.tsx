@@ -14,6 +14,7 @@ interface AddTransactionTabProps {
   }) => void;
   onCancel: () => void;
   initialType?: "income" | "expense";
+  budgets?: { category: string }[];
 }
 
 export default function AddTransactionTab({
@@ -198,7 +199,7 @@ export default function AddTransactionTab({
             <label className="text-xs text-slate-400 font-semibold block mb-2">Loại giao dịch</label>
             <select
               value={type}
-              onChange={(e: any) => setType(e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setType(e.target.value as "income" | "expense")}
               className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500 text-white font-bold"
             >
               <option value="expense">Khoản Chi Tiêu (-)</option>

@@ -762,6 +762,7 @@ export default function Dashboard() {
             onSave={handleSaveTransaction}
             onCancel={() => setActiveTab("overview")}
             initialType="expense"
+            budgets={budgets}
           />
         )}
 
@@ -1060,12 +1061,28 @@ export default function Dashboard() {
                     </>
                   ) : (
                     <>
-                      <option value="Other">Other (Khác)</option>
-                      <option value="Food & Beverage">Food & Beverage (Ăn uống)</option>
-                      <option value="Transportation">Transportation (Di chuyển)</option>
-                      <option value="Shopping">Shopping (Mua sắm)</option>
-                      <option value="Bills & Utilities">Bills & Utilities (Hóa đơn)</option>
-                      <option value="Entertainment">Entertainment (Giải trí)</option>
+                      {Array.from(new Set([
+                        "Other",
+                        "Food & Beverage",
+                        "Transportation",
+                        "Shopping",
+                        "Bills & Utilities",
+                        "Entertainment",
+                        ...budgets.map(b => b.category)
+                      ])).map((cat) => {
+                        let displayName = cat;
+                        if (cat === "Other") displayName = "Other (Khác)";
+                        if (cat === "Food & Beverage") displayName = "Food & Beverage (Ăn uống)";
+                        if (cat === "Transportation") displayName = "Transportation (Di chuyển)";
+                        if (cat === "Shopping") displayName = "Shopping (Mua sắm)";
+                        if (cat === "Bills & Utilities") displayName = "Bills & Utilities (Hóa đơn)";
+                        if (cat === "Entertainment") displayName = "Entertainment (Giải trí)";
+                        return (
+                          <option key={cat} value={cat}>
+                            {displayName}
+                          </option>
+                        );
+                      })}
                     </>
                   )}
                 </select>
