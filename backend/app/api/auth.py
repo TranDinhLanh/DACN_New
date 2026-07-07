@@ -31,7 +31,7 @@ def verify_recaptcha(response_token: str) -> bool:
     if response_token == "mock_captcha_token":
         return True
     
-    secret = os.getenv("RECAPTCHA_SECRET_KEY", "6LeIxAcTAAAAAGG-v2oB0ihxZGlG5q0SBxm8gdqc")
+    secret = os.getenv("RECAPTCHA_SECRET_KEY", "6LfFl0gtAAAAAMBW3zBTjb673MWsuGVGGzb-mLST")
     print(f"[DEBUG reCAPTCHA] Secret Key: {secret[:6]}...{secret[-6:] if len(secret) > 12 else ''}")
     url = "https://www.google.com/recaptcha/api/siteverify"
     data = urllib.parse.urlencode({
@@ -120,7 +120,7 @@ def get_me(current_user: User = Depends(get_current_user)):
 @router.post("/forgot-password")
 def forgot_password(req: ForgotPasswordRequest, db: Session = Depends(get_db)):
     """
-    Generate OTP for password reset, save to database and print/return it.
+    Generate OTP for password reset, save to database, send email or fallback.
     """
     user = db.query(User).filter(User.email == req.email).first()
     if not user:
@@ -131,18 +131,38 @@ def forgot_password(req: ForgotPasswordRequest, db: Session = Depends(get_db)):
     
     # Save OTP to database
     user.reset_otp = otp
-    user.reset_otp_expires = datetime.now(timezone.utc) + timedelta(minutes=10)
+    user.reset_otp_expires = datetime.now(timezone.utc) + timedelta(minutes=5)
     db.commit()
     
-    # Print the OTP to console so it's easy to see in the terminal
-    print(f"\n==========================================")
-    print(f"PASSWORD RESET OTP FOR {req.email}: {otp}")
-    print(f"==========================================\n")
+    # Send actual email
+    from app.core.email import send_email
+    subject = "Mã xác thực OTP đặt lại mật khẩu - AuraFinance"
+    body = f"""
+    <html>
+    <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+        <p>Chào bạn,</p>
+        <p>Bạn đã yêu cầu đặt lại mật khẩu cho tài khoản tại AuraFinance. Mã OTP xác thực đặt lại mật khẩu của bạn là: <strong style="font-size: 18px; color: #4f46e5;">{otp}</strong></p>
+        <p>Mã OTP này có hiệu lực trong vòng 5 phút.</p>
+        <p>Nếu bạn không thực hiện yêu cầu này, vui lòng bỏ qua email này để bảo vệ tài khoản.</p>
+        <br>
+        <p>Trân trọng,<br>AuraFinance Support Team</p>
+    </body>
+    </html>
+    """
     
-    return {
-        "message": "OTP verification email sent successfully. (Mocked)",
-        "otp": otp  # Returned in response for easy testing in frontend
-    }
+    email_sent = send_email(req.email, subject, body)
+    
+    if email_sent:
+        return {
+            "message": "Mã xác thực OTP đã được gửi đến hòm thư Gmail của bạn thành công.",
+            "otp": None
+        }
+    else:
+        # Fallback for development if SMTP is not configured
+        return {
+            "message": "Không thể gửi email OTP (Chưa cấu hình SMTP). Đang chạy chế độ giả lập.",
+            "otp": otp
+        }
 
 
 @router.post("/reset-password")

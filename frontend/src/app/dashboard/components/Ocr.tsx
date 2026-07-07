@@ -55,7 +55,7 @@ export default function OcrTab({ onSaveSuccess, onCancel }: OcrTabProps) {
     formData.append("file", file);
 
     try {
-      const response = await fetch("http://localhost:8000/api/v1/ocr/upload", {
+      const response = await fetch("http://localhost:8001/api/v1/ocr/upload", {
         method: "POST",
         body: formData,
       });
@@ -244,7 +244,7 @@ export default function OcrTab({ onSaveSuccess, onCancel }: OcrTabProps) {
                   {ocrPreviewUrl ? (
                     <img src={ocrPreviewUrl} alt="Scanned Bill Receipt" className="h-full w-full object-contain transition-transform duration-300 hover:scale-105" />
                   ) : ocrExtractedData.image_url ? (
-                    <img src={`http://localhost:8000${ocrExtractedData.image_url}`} alt="Scanned Bill Receipt" className="h-full w-full object-contain transition-transform duration-300 hover:scale-105" />
+                    <img src={`http://localhost:8001${ocrExtractedData.image_url}`} alt="Scanned Bill Receipt" className="h-full w-full object-contain transition-transform duration-300 hover:scale-105" />
                   ) : (
                     <div className="text-slate-500 text-xs flex flex-col items-center gap-2">
                       <AlertTriangle className="h-6 w-6 text-amber-500" />

@@ -22,7 +22,7 @@ pip install -r requirements.txt --quiet
 
 echo.
 echo [5/5] Chay FastAPI server...
-echo Server se chay tai: http://localhost:8000
-echo Docs API: http://localhost:8000/docs
+echo Server se chay tai: http://localhost:8001
+echo Docs API: http://localhost:8001/docs
 echo.
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8001
