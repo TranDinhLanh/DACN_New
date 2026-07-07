@@ -29,6 +29,15 @@ class Settings(BaseSettings):
             return url
         return f"postgresql+pg8000://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_SERVER}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
 
+    # SMTP Settings
+    SMTP_HOST: Optional[str] = None
+    SMTP_PORT: Optional[int] = None
+    SMTP_USER: Optional[str] = None
+    SMTP_PASSWORD: Optional[str] = None
+    SMTP_FROM_EMAIL: Optional[str] = None
+    SMTP_TLS: bool = True
+    SMTP_SSL: bool = False
+
     class Config:
         case_sensitive = True
         env_file = ".env"

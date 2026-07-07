@@ -134,6 +134,7 @@ class ChatResponse(BaseModel):
     response: str
     suggested_questions: Optional[List[str]] = None
 
+
 # --- RECURRING TEMPLATE SCHEMAS ---
 
 class RecurringTemplateCreate(BaseModel):
@@ -209,7 +210,6 @@ class EventResponse(EventBase):
     class Config:
         from_attributes = True
 
-
 class EventDetailResponse(EventResponse):
     transactions: List[TransactionResponse] = []
     total_spent: float = 0.0
@@ -219,7 +219,6 @@ class EventDetailResponse(EventResponse):
 
     class Config:
         from_attributes = True
-
 
 class EventListResponse(EventResponse):
     total_spent: float = 0.0

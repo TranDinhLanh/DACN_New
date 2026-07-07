@@ -90,6 +90,7 @@ class Forecast(Base):
     # Relationships
     user = relationship("User", back_populates="forecasts")
 
+
 class RecurringTemplate(Base):
     __tablename__ = "recurring_templates"
 
@@ -110,6 +111,7 @@ class RecurringTemplate(Base):
 
     # Relationships
     user = relationship("User", back_populates="recurring_templates")
+
 
 class Event(Base):
     __tablename__ = "events"

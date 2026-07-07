@@ -11,6 +11,7 @@ export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
   const [otp, setOtp] = useState("");
   const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [step, setStep] = useState(1); // Step 1: Request OTP, Step 2: Reset Password
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -51,6 +52,12 @@ export default function ForgotPasswordPage() {
     e.preventDefault();
     setError(null);
     setSuccess(null);
+
+    if (newPassword !== confirmPassword) {
+      setError("Mật khẩu mới và xác nhận mật khẩu không khớp.");
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -175,6 +182,25 @@ export default function ForgotPasswordPage() {
                     placeholder="••••••••"
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
+                    className="w-full bg-slate-900/60 border border-white/5 rounded-xl pl-11 pr-4 py-3.5 text-sm focus:outline-none focus:border-indigo-500/50 text-white placeholder-slate-500 transition-colors"
+                    minLength={6}
+                    required
+                  />
+                </div>
+              </div>
+
+              {/* Confirm New Password Field */}
+              <div className="space-y-1.5">
+                <label className="text-xs text-slate-400 font-semibold block">Xác nhận mật khẩu mới</label>
+                <div className="relative">
+                  <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-500">
+                    <Lock className="h-4.5 w-4.5" />
+                  </span>
+                  <input
+                    type="password"
+                    placeholder="••••••••"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
                     className="w-full bg-slate-900/60 border border-white/5 rounded-xl pl-11 pr-4 py-3.5 text-sm focus:outline-none focus:border-indigo-500/50 text-white placeholder-slate-500 transition-colors"
                     minLength={6}
                     required
