@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import useSWR, { mutate } from "swr";
 import {
   Sparkles,
@@ -58,8 +58,9 @@ const INITIAL_TRANSACTIONS: Transaction[] = [
   { id: "7", amount: 950000, type: "expense", category: "Entertainment", description: "Ve xem phim CGV & An uong", transaction_date: "2026-05-18", merchant_name: "CGV Cinemas" },
 ];
 
-export default function Dashboard() {
+function DashboardContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [mounted, setMounted] = useState(false);
 
   const [user, setUser] = useState<{ email: string; full_name?: string } | null>(null);
@@ -76,10 +77,56 @@ export default function Dashboard() {
     "Entertainment": 10,
     "Other": 10
   });
-  // Tab/Screen navigation State
-  const [activeTab, setActiveTab] = useState<
-    "overview" | "add" | "ocr" | "budgets" | "security" | "history" | "recurring" | "events"
-  >("overview");
+  // Tab/Screen navigation State from URL Search Params
+  const activeTab = (searchParams.get("tab") || "overview") as
+    | "overview"
+    | "add"
+    | "ocr"
+    | "budgets"
+    | "security"
+    | "history"
+    | "recurring"
+    | "events";
+
+  const setActiveTab = (tabName: string) => {
+    router.push(`/dashboard?tab=${tabName}`);
+  };
+
+  // Toast notifications state
+  const [toasts, setToasts] = useState<{ id: string; message: string; type: "success" | "error" | "info" }[]>([]);
+  
+  const showToast = (message: string, type: "success" | "error" | "info" = "success") => {
+    const id = Math.random().toString();
+    setToasts(prev => [...prev, { id, message, type }]);
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+    }, 4000);
+  };
+
+  // Custom confirmation dialog state
+  const [confirmDialog, setConfirmDialog] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: "",
+    message: "",
+    onConfirm: () => {},
+  });
+
+  const askConfirmation = (title: string, message: string, onConfirmAction: () => void) => {
+    setConfirmDialog({
+      isOpen: true,
+      title,
+      message,
+      onConfirm: () => {
+        onConfirmAction();
+        setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+      }
+    });
+  };
 
   // Edit Transaction states
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
@@ -167,20 +214,28 @@ export default function Dashboard() {
   };
 
   const handleDeleteEvent = (id: string) => {
-    if (confirm("Bạn có chắc chắn muốn xóa sự kiện này? Các giao dịch liên quan sẽ không bị xóa nhưng sẽ được gỡ khỏi sự kiện.")) {
-      api.deleteEvent(id)
-        .then(() => {
-          if (selectedEventForDetail?.id === id) {
-            setSelectedEventForDetail(null);
-            setSelectedEventDetail(null);
-          }
-          fetchEvents();
-          api.getTransactions()
-            .then(data => setTransactions(data || []))
-            .catch(err => console.error(err));
-        })
-        .catch(err => console.error("Failed to delete event:", err));
-    }
+    askConfirmation(
+      "Xóa sự kiện",
+      "Bạn có chắc chắn muốn xóa sự kiện này? Các giao dịch liên quan sẽ không bị xóa nhưng sẽ được gỡ khỏi sự kiện.",
+      () => {
+        api.deleteEvent(id)
+          .then(() => {
+            showToast("Đã xóa sự kiện thành công!", "success");
+            if (selectedEventForDetail?.id === id) {
+              setSelectedEventForDetail(null);
+              setSelectedEventDetail(null);
+            }
+            fetchEvents();
+            api.getTransactions()
+              .then(data => setTransactions(data || []))
+              .catch(err => console.error(err));
+          })
+          .catch(err => {
+            console.error("Failed to delete event:", err);
+            showToast("Xóa sự kiện thất bại.", "error");
+          });
+      }
+    );
   };
 
   const handleSelectEventForDetail = (id: string) => {
@@ -551,21 +606,28 @@ export default function Dashboard() {
   };
 
   const handleDeleteTransaction = (id: string) => {
-    if (!confirm("Bạn có chắc chắn muốn xóa giao dịch này?")) return;
-    setGlobalLoadingMessage("Đang xóa giao dịch...");
-    api.deleteTransaction(id)
-      .then(() => {
-        setTransactions(prev => prev.filter(t => t.id !== id));
-        mutate("transactions");
-        mutate("budgets");
-      })
-      .catch(err => {
-        console.error("Failed to delete transaction:", err);
-        setTransactions(prev => prev.filter(t => t.id !== id));
-      })
-      .finally(() => {
-        setGlobalLoadingMessage(null);
-      });
+    askConfirmation(
+      "Xóa giao dịch",
+      "Bạn có chắc chắn muốn xóa giao dịch này?",
+      () => {
+        setGlobalLoadingMessage("Đang xóa giao dịch...");
+        api.deleteTransaction(id)
+          .then(() => {
+            setTransactions(prev => prev.filter(t => t.id !== id));
+            mutate("transactions");
+            mutate("budgets");
+            showToast("Đã xóa giao dịch thành công!", "success");
+          })
+          .catch(err => {
+            console.error("Failed to delete transaction:", err);
+            setTransactions(prev => prev.filter(t => t.id !== id));
+            showToast("Xóa giao dịch thất bại.", "error");
+          })
+          .finally(() => {
+            setGlobalLoadingMessage(null);
+          });
+      }
+    );
   };
 
   const handleResetTransactions = () => {
@@ -879,6 +941,8 @@ export default function Dashboard() {
             budgets={budgets}
             setBudgets={setBudgets}
             mutate={mutate}
+            onShowToast={showToast}
+            onConfirmAction={askConfirmation}
           />
         )}
 
@@ -887,6 +951,8 @@ export default function Dashboard() {
             templates={recurringTemplates || []}
             isLoading={!recurringTemplates}
             onRefresh={() => mutateRecurring()}
+            onShowToast={showToast}
+            onConfirmAction={askConfirmation}
           />
         )}
 
@@ -1433,6 +1499,118 @@ export default function Dashboard() {
           </div>
         </div>
       )}
+
+      {/* GLOBAL TOAST NOTIFICATIONS */}
+      <div className="fixed bottom-5 right-5 z-[110] flex flex-col gap-2 max-w-sm w-full">
+        {toasts.map(t => (
+          <div
+            key={t.id}
+            className={`p-4 rounded-xl border shadow-lg flex items-center gap-3 transition-all duration-300 ${
+              t.type === "success"
+                ? "bg-emerald-950/90 border-emerald-500/30 text-emerald-300"
+                : t.type === "error"
+                ? "bg-rose-950/90 border-rose-500/30 text-rose-300"
+                : "bg-slate-900/95 border-white/10 text-slate-300"
+            }`}
+            style={{
+              animation: "slideInRight 0.3s ease-out forwards",
+            }}
+          >
+            {t.type === "success" && (
+              <span className="h-5 w-5 rounded-full bg-emerald-500/20 flex items-center justify-center text-emerald-400 font-extrabold text-[10px]">✓</span>
+            )}
+            {t.type === "error" && (
+              <span className="h-5 w-5 rounded-full bg-rose-500/20 flex items-center justify-center text-rose-400 font-extrabold text-[10px]">⚠️</span>
+            )}
+            {t.type === "info" && (
+              <span className="h-5 w-5 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-400 font-extrabold text-[10px]">i</span>
+            )}
+            <p className="text-xs font-bold flex-1">{t.message}</p>
+            <button
+              onClick={() => setToasts(prev => prev.filter(x => x.id !== t.id))}
+              className="text-[10px] hover:text-white transition-colors ml-2 opacity-60 hover:opacity-100"
+            >
+              ✕
+            </button>
+          </div>
+        ))}
+      </div>
+
+      {/* CUSTOM CONFIRMATION DIALOG MODAL */}
+      {confirmDialog.isOpen && (
+        <div 
+          className="fixed inset-0 z-[120] flex items-center justify-center bg-black/70 backdrop-blur-sm"
+          style={{ animation: "fadeIn 0.2s ease-out forwards" }}
+        >
+          <div 
+            className="glass-card rounded-2xl p-6 border border-white/10 max-w-sm w-full mx-4 shadow-2xl relative overflow-hidden"
+            style={{ animation: "scaleUp 0.2s ease-out forwards" }}
+          >
+            {/* Header / Title */}
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-amber-400 text-lg">⚠️</span>
+              <h3 className="text-sm font-extrabold text-white">{confirmDialog.title}</h3>
+            </div>
+            
+            {/* Message */}
+            <p className="text-xs text-slate-300 leading-relaxed mb-6">
+              {confirmDialog.message}
+            </p>
+            
+            {/* Actions */}
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setConfirmDialog(prev => ({ ...prev, isOpen: false }))}
+                className="px-4 py-2 rounded-xl bg-slate-900 border border-white/5 hover:border-white/10 text-slate-400 text-xs font-bold transition-all"
+              >
+                Hủy bỏ
+              </button>
+              <button
+                type="button"
+                onClick={confirmDialog.onConfirm}
+                className="px-5 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-cyan-500 hover:from-indigo-500 hover:to-cyan-400 text-white text-xs font-bold shadow-lg transition-all"
+              >
+                Xác nhận
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CUSTOM ANIMATIONS */}
+      <style dangerouslySetInnerHTML={{__html: `
+        @keyframes slideInRight {
+          from {
+            transform: translateX(100%);
+            opacity: 0;
+          }
+          to {
+            transform: translateX(0);
+            opacity: 1;
+          }
+        }
+        @keyframes fadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        @keyframes scaleUp {
+          from { transform: scale(0.95); opacity: 0; }
+          to { transform: scale(1); opacity: 1; }
+        }
+      `}} />
     </div>
+  );
+}
+
+export default function Dashboard() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-[#0b0f19] flex items-center justify-center">
+        <div className="h-10 w-10 rounded-full border-2 border-indigo-500/20 border-t-indigo-500 animate-spin" />
+      </div>
+    }>
+      <DashboardContent />
+    </Suspense>
   );
 }

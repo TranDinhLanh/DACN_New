@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Sparkles, Mail, Lock, KeyRound, Check, ArrowRight } from "lucide-react";
@@ -16,6 +16,16 @@ export default function ForgotPasswordPage() {
   const [success, setSuccess] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [receivedOtp, setReceivedOtp] = useState<string | null>(null); // To display for ease of testing!
+
+  // If already logged in, redirect to dashboard
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const token = localStorage.getItem("auth_token");
+      if (token) {
+        router.push("/dashboard");
+      }
+    }
+  }, [router]);
 
   const handleRequestOtp = async (e: React.FormEvent) => {
     e.preventDefault();

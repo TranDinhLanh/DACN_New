@@ -22,7 +22,8 @@ class OCRService:
     def process_receipt_image(image_path: str, file_name: str) -> Dict[str, Any]:
         """
         Process the uploaded receipt image.
-        Uses LayoutLMv3 if available; otherwise falls back to highly robust regex & OCR heuristics.
+        Uses PaddleOCR to extract Vietnamese text, then Regex heuristics to structure the data.
+        Falls back to mock data if PaddleOCR is not installed.
         """
         logger.info(f"Processing receipt image: {file_name} from path: {image_path}")
         
@@ -33,12 +34,12 @@ class OCRService:
         date_obj = datetime.now().date()
         is_mock = False
         debug_message = ""
-        
+
         # 1. Thử sử dụng PaddleOCR nếu có sẵn
         if HAS_PADDLEOCR:
             try:
                 logger.info(f"Đang xử lý hóa đơn bằng PaddleOCR...")
-                ai_results = OCRService._run_layoutlmv3_inference(image_path, "")
+                ai_results = OCRService._run_paddleocr_inference(image_path)
                 
                 merchant = ai_results.get("merchant", merchant)
                 amount = ai_results.get("amount", amount)
@@ -56,7 +57,7 @@ class OCRService:
             is_mock = True
             debug_message = "Chạy chế độ giả lập vì: Chưa cài PaddleOCR (chạy: pip install paddleocr)"
         
-        # 2. Fallback / Mock parsing if LayoutLMv3 is not active or fails
+        # 2. Fallback / Mock nếu PaddleOCR chưa cài hoặc lỗi
         if not extracted_text:
             logger.info("Running high-fidelity OCR & Regex Heuristics fallback...")
             
@@ -144,11 +145,11 @@ class OCRService:
         }
 
     @staticmethod
-    def _run_layoutlmv3_inference(image_path: str, model_path: str) -> Dict[str, Any]:
+    def _run_paddleocr_inference(image_path: str) -> Dict[str, Any]:
         """
-        QUY TRÌNH ĐƠN GIẢN HÓA CHO QUẢN LÝ TÀI CHÍNH CÁ NHÂN:
+        QUY TRÌNH CHO QUẢN LÝ TÀI CHÍNH CÁ NHÂN:
         1. PaddleOCR trích xuất văn bản tiếng Việt từ hóa đơn
-        2. LLM (nếu có API key) hoặc Regex thông minh trích xuất thông tin cấu trúc
+        2. Regex thông minh trích xuất thông tin cấu trúc
         
         Phù hợp với hóa đơn Việt Nam: siêu thị, quán café, nhà hàng, cửa hàng tiện lợi...
         """
@@ -164,7 +165,6 @@ class OCRService:
         logger.info("[OCR] Bắt đầu quét hóa đơn bằng PaddleOCR (tiếng Việt)...")
         
         # BƯỚC 1: Khởi tạo PaddleOCR với hỗ trợ tiếng Việt
-        # Note: PaddleOCR 3.x đã đổi tên parameters
         ocr = PaddleOCR(lang='vi')
         
         # BƯỚC 2: Thực hiện OCR trên ảnh hóa đơn
@@ -184,123 +184,16 @@ class OCRService:
         full_text = "\n".join(text_lines)
         logger.info(f"[OCR] ✅ Trích xuất được {len(text_lines)} dòng text")
         
-        # BƯỚC 4: Kiểm tra xem có LLM API key không (OpenAI, Gemini, Claude...)
-        use_llm = os.getenv("OPENAI_API_KEY") or os.getenv("GEMINI_API_KEY")
-        
-        if use_llm:
-            logger.info("[LLM] Sử dụng AI để trích xuất thông tin hóa đơn...")
-            extracted_data = OCRService._extract_with_llm(full_text)
-        else:
-            logger.info("[REGEX] Sử dụng regex để trích xuất thông tin hóa đơn...")
-            extracted_data = OCRService._extract_with_regex(full_text)
+        # BƯỚC 4: Sử dụng regex để trích xuất thông tin hóa đơn
+        logger.info("[REGEX] Sử dụng regex để trích xuất thông tin hóa đơn...")
+        extracted_data = OCRService._extract_with_regex(full_text)
         
         # Thêm toàn bộ văn bản OCR vào kết quả
         extracted_data["extracted_text"] = full_text
         
         return extracted_data
-    
-    @staticmethod
-    def _extract_with_llm(text: str) -> Dict[str, Any]:
-        """
-        Sử dụng LLM (OpenAI GPT, Google Gemini...) để trích xuất thông tin hóa đơn
-        """
-        prompt = f"""
-Trích xuất thông tin từ hóa đơn Việt Nam sau đây.
 
-TEXT:
-{text}
 
-Trả về JSON với định dạng chính xác sau (không thêm markdown, chỉ JSON thuần):
-{{
-    "company": "Tên cửa hàng/công ty",
-    "date": "DD/MM/YYYY",
-    "address": "Địa chỉ đầy đủ",
-    "total": số_tiền_dạng_số
-}}
-
-Lưu ý:
-- "total" phải là số (không có dấu phẩy, chấm phân cách nghìn)
-- "date" định dạng DD/MM/YYYY
-- Nếu không tìm thấy thông tin, để trống ""
-"""
-        
-        try:
-            # Thử OpenAI API trước
-            openai_key = os.getenv("OPENAI_API_KEY")
-            if openai_key:
-                import openai
-                openai.api_key = openai_key
-                
-                response = openai.ChatCompletion.create(
-                    model="gpt-3.5-turbo",
-                    messages=[
-                        {"role": "system", "content": "Bạn là trợ lý trích xuất thông tin hóa đơn. Chỉ trả về JSON thuần, không markdown."},
-                        {"role": "user", "content": prompt}
-                    ],
-                    temperature=0.1
-                )
-                
-                json_str = response.choices[0].message.content.strip()
-                # Loại bỏ markdown code block nếu có
-                json_str = re.sub(r'```json\s*|\s*```', '', json_str)
-                
-                import json
-                data = json.loads(json_str)
-                
-                return {
-                    "merchant": data.get("company", "Unknown Store"),
-                    "amount": float(data.get("total", 0)),
-                    "category": OCRService._classify_category(data.get("company", ""), text),
-                    "transaction_date": OCRService._parse_date(data.get("date", "")),
-                }
-            
-            # Nếu không có OpenAI, thử Gemini
-            gemini_key = os.getenv("GEMINI_API_KEY")
-            if gemini_key:
-                import google.generativeai as genai
-                genai.configure(api_key=gemini_key)
-                
-                # Cơ chế tự động đổi mô hình nếu gặp lỗi (hết quota, không tồn tại...)
-                models_to_try = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-flash-latest"]
-                json_str = None
-                last_error = None
-                
-                for model_name in models_to_try:
-                    try:
-                        logger.info(f"[LLM-OCR] Đang thử gọi Gemini model: {model_name}...")
-                        model = genai.GenerativeModel(model_name)
-                        response = model.generate_content(prompt)
-                        json_str = response.text.strip()
-                        logger.info(f"[LLM-OCR] Gọi Gemini thành công bằng model: {model_name}")
-                        break
-                    except Exception as e:
-                        last_error = e
-                        logger.warning(f"[LLM-OCR] Lỗi khi dùng model {model_name}: {e}. Đang thử model dự phòng...")
-                
-                if json_str is None:
-                    if last_error:
-                        raise last_error
-                    else:
-                        raise Exception("Không thể xử lý OCR bằng bất kỳ model Gemini nào.")
-                
-                json_str = re.sub(r'```json\s*|\s*```', '', json_str)
-                
-                import json
-                data = json.loads(json_str)
-                
-                return {
-                    "merchant": data.get("company", "Unknown Store"),
-                    "amount": float(data.get("total", 0)),
-                    "category": OCRService._classify_category(data.get("company", ""), text),
-                    "transaction_date": OCRService._parse_date(data.get("date", "")),
-                }
-                
-        except Exception as e:
-            logger.warning(f"[LLM] Lỗi khi gọi API: {e}. Chuyển sang regex...")
-        
-        # Fallback về regex nếu LLM lỗi
-        return OCRService._extract_with_regex(text)
-    
     @staticmethod
     def _extract_with_regex(text: str) -> Dict[str, Any]:
         """

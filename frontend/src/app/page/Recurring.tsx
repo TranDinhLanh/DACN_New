@@ -63,10 +63,30 @@ interface RecurringTabProps {
   templates: RecurringTemplate[];
   isLoading: boolean;
   onRefresh: () => void;
+  onShowToast?: (message: string, type?: "success" | "error" | "info") => void;
+  onConfirmAction?: (title: string, message: string, onConfirm: () => void) => void;
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
-export default function RecurringTab({ templates, isLoading, onRefresh }: RecurringTabProps) {
+export default function RecurringTab({
+  templates,
+  isLoading,
+  onRefresh,
+  onShowToast,
+  onConfirmAction,
+}: RecurringTabProps) {
+  const notify = (msg: string, type: "success" | "error" | "info" = "info") => {
+    if (onShowToast) onShowToast(msg, type);
+    else alert(msg);
+  };
+
+  const confirmThenRun = (title: string, msg: string, action: () => void) => {
+    if (onConfirmAction) {
+      onConfirmAction(title, msg, action);
+    } else {
+      if (confirm(msg)) action();
+    }
+  };
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm());
@@ -144,8 +164,10 @@ export default function RecurringTab({ templates, isLoading, onRefresh }: Recurr
 
       if (editingId) {
         await api.updateRecurringTemplate(editingId, payload);
+        notify("Đã cập nhật lịch trình thành công!", "success");
       } else {
         await api.createRecurringTemplate(payload);
+        notify("Đã tạo lịch trình định kỳ thành công!", "success");
       }
       // Revalidate cache for transactions and budgets to update Overview and History tabs
       mutate("transactions");
@@ -161,16 +183,22 @@ export default function RecurringTab({ templates, isLoading, onRefresh }: Recurr
 
   // ─── Delete ────────────────────────────────────────────────────────────────
   const handleDelete = async (id: string) => {
-    if (!confirm("Bạn có chắc muốn xóa lịch trình này?")) return;
-    setDeleting(id);
-    try {
-      await api.deleteRecurringTemplate(id);
-      onRefresh();
-    } catch (err: any) {
-      alert(err.message || "Xóa thất bại.");
-    } finally {
-      setDeleting(null);
-    }
+    confirmThenRun(
+      "Xóa lịch trình định kỳ",
+      "Bạn có chắc muốn xóa lịch trình này?",
+      async () => {
+        setDeleting(id);
+        try {
+          await api.deleteRecurringTemplate(id);
+          notify("Đã xóa lịch trình thành công!", "success");
+          onRefresh();
+        } catch (err: any) {
+          notify(err.message || "Xóa thất bại.", "error");
+        } finally {
+          setDeleting(null);
+        }
+      }
+    );
   };
 
   // ─── Toggle active ─────────────────────────────────────────────────────────

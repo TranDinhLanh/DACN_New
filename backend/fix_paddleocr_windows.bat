@@ -1,4 +1,4 @@
-@echo off
+﻿@echo off
 echo ========================================
 echo FIX PADDLEOCR ONEDNN ERROR TREN WINDOWS
 echo ========================================
@@ -8,11 +8,11 @@ echo [1/3] Kich hoat virtual environment...
 call venv\Scripts\activate.bat
 
 echo.
-echo [2/3] Gỡ PaddlePaddle và PaddleOCR hiện tại...
+echo [2/3] Gß╗í PaddlePaddle v├á PaddleOCR hiß╗çn tß║íi...
 pip uninstall paddlepaddle paddleocr -y
 
 echo.
-echo [3/3] Cài phiên bản ổn định (PaddlePaddle 2.6.2)...
+echo [3/3] C├ái phi├¬n bß║ún ß╗òn ─æß╗ïnh (PaddlePaddle 2.6.2)...
 pip install paddlepaddle==2.6.2 paddleocr==2.7.3
 
 echo.

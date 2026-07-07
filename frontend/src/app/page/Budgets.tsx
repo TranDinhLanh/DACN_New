@@ -32,6 +32,8 @@ interface BudgetsTabProps {
   budgets: BudgetItem[];
   setBudgets: React.Dispatch<React.SetStateAction<BudgetItem[]>>;
   mutate: (key: string) => void;
+  onShowToast?: (message: string, type?: "success" | "error" | "info") => void;
+  onConfirmAction?: (title: string, message: string, onConfirm: () => void) => void;
 }
 
 interface BudgetItem {
@@ -50,8 +52,23 @@ export default function BudgetsTab({
   budgets,
   setBudgets,
   mutate,
+  onShowToast,
+  onConfirmAction,
 }: BudgetsTabProps) {
   const [isSaving, setIsSaving] = React.useState(false);
+
+  const notify = (msg: string, type: "success" | "error" | "info" = "info") => {
+    if (onShowToast) onShowToast(msg, type);
+    else alert(msg);
+  };
+
+  const confirmThenRun = (title: string, msg: string, action: () => void) => {
+    if (onConfirmAction) {
+      onConfirmAction(title, msg, action);
+    } else {
+      if (confirm(msg)) action();
+    }
+  };
   const [showAddForm, setShowAddForm] = React.useState(false);
   const [newCategoryName, setNewCategoryName] = React.useState("");
   const [editingCategory, setEditingCategory] = React.useState<string | null>(null);
@@ -116,7 +133,7 @@ export default function BudgetsTab({
           });
         });
         mutate("budgets");
-        alert("Phân chia hũ ngân sách thành công!");
+        notify("Phân chia hũ ngân sách thành công!", "success");
       })
       .catch((err) => {
         console.error("Failed to save all budget jars:", err);
@@ -143,7 +160,7 @@ export default function BudgetsTab({
     const name = newCategoryName.trim();
     if (!name) return;
     if (jarPercentages[name] !== undefined) {
-      alert("Hũ ngân sách này đã tồn tại!");
+      notify("Hũ ngân sách này đã tồn tại!", "error");
       return;
     }
 
@@ -157,28 +174,33 @@ export default function BudgetsTab({
   };
 
   const handleDeleteCategory = async (cat: string) => {
-    if (!confirm(`Bạn có chắc chắn muốn xóa hũ ngân sách "${cat}"?`)) return;
+    confirmThenRun(
+      "Xóa hũ ngân sách",
+      `Bạn có chắc chắn muốn xóa hũ ngân sách "${cat}"?`,
+      async () => {
+        const existing = budgets.find((b) => b.category === cat);
+        if (existing && existing.id) {
+          setIsSaving(true);
+          try {
+            await api.deleteBudget(existing.id);
+          } catch (err) {
+            console.error("Failed to delete budget from backend:", err);
+          } finally {
+            setIsSaving(false);
+          }
+        }
 
-    const existing = budgets.find((b) => b.category === cat);
-    if (existing && existing.id) {
-      setIsSaving(true);
-      try {
-        await api.deleteBudget(existing.id);
-      } catch (err) {
-        console.error("Failed to delete budget from backend:", err);
-      } finally {
-        setIsSaving(false);
+        setJarPercentages((prev) => {
+          const updated = { ...prev };
+          delete updated[cat];
+          return updated;
+        });
+
+        setBudgets((prev) => prev.filter((b) => b.category !== cat));
+        mutate("budgets");
+        notify("Đã xóa hũ ngân sách thành công!", "success");
       }
-    }
-
-    setJarPercentages((prev) => {
-      const updated = { ...prev };
-      delete updated[cat];
-      return updated;
-    });
-
-    setBudgets((prev) => prev.filter((b) => b.category !== cat));
-    mutate("budgets");
+    );
   };
 
   const startRename = (cat: string) => {
@@ -194,7 +216,7 @@ export default function BudgetsTab({
     }
 
     if (jarPercentages[newCat] !== undefined) {
-      alert("Tên hũ ngân sách này đã tồn tại!");
+      notify("Tên hũ ngân sách này đã tồn tại!", "error");
       return;
     }
 
@@ -235,9 +257,10 @@ export default function BudgetsTab({
 
       setEditingCategory(null);
       mutate("budgets");
+      notify("Đã đổi tên hũ thành công!", "success");
     } catch (err) {
       console.error("Failed to rename category:", err);
-      alert("Đã xảy ra lỗi khi đổi tên hũ!");
+      notify("Đã xảy ra lỗi khi đổi tên hũ!", "error");
     } finally {
       setIsSaving(false);
     }

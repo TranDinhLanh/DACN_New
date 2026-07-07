@@ -23,6 +23,16 @@ export default function RegisterPage() {
   const [fallbackAnswer, setFallbackAnswer] = useState("");
   const [mathQuestion, setMathQuestion] = useState({ num1: 0, num2: 0, result: 0 });
 
+  // If already logged in, redirect to dashboard
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const token = localStorage.getItem("auth_token");
+      if (token) {
+        router.push("/dashboard");
+      }
+    }
+  }, [router]);
+
   const generateMathQuestion = () => {
     const num1 = Math.floor(Math.random() * 10) + 1;
     const num2 = Math.floor(Math.random() * 10) + 1;

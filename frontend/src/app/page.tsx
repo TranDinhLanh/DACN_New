@@ -1,7 +1,6 @@
-"use main"; // client side component for custom state, wait in NextJS 14+ it's 'use client'
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { 
   TrendingUp, 
@@ -15,9 +14,32 @@ import {
   Sparkles,
   PieChart
 } from "lucide-react";
+import { api } from "@/lib/api";
 
 export default function LandingPage() {
   const [activeTab, setActiveTab] = useState("ocr");
+  const [user, setUser] = useState<{ email: string; full_name?: string } | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const token = localStorage.getItem("auth_token");
+    if (token) {
+      api.getMe()
+        .then(userData => {
+          setUser(userData);
+        })
+        .catch(err => {
+          console.error("Failed to load user info on landing page:", err);
+          setUser(null);
+        })
+        .finally(() => {
+          setLoading(false);
+        });
+    } else {
+      setUser(null);
+      setLoading(false);
+    }
+  }, []);
 
   return (
     <div className="relative min-h-screen bg-[#0b0f19] overflow-hidden">
@@ -45,15 +67,31 @@ export default function LandingPage() {
         </nav>
 
         <div className="flex items-center gap-4">
-          <Link href="/login" className="text-sm font-semibold text-slate-300 hover:text-white transition-colors">
-            Đăng nhập
-          </Link>
-          <Link href="/register" className="relative group px-5 py-2.5 rounded-xl font-semibold text-sm transition-all duration-300 overflow-hidden glass-card hover:border-indigo-500/50">
-            <span className="absolute inset-0 w-full h-full bg-gradient-to-r from-indigo-600/20 to-cyan-500/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-            <span className="relative text-white flex items-center gap-2">
-              Đăng ký <ArrowRight className="h-4 w-4 text-indigo-400" />
-            </span>
-          </Link>
+          {!loading && user ? (
+            <>
+              <span className="text-sm font-semibold text-indigo-300">
+                Hi, {user.full_name || user.email}
+              </span>
+              <Link href="/dashboard" className="relative group px-5 py-2.5 rounded-xl font-semibold text-sm transition-all duration-300 overflow-hidden glass-card hover:border-indigo-500/50">
+                <span className="absolute inset-0 w-full h-full bg-gradient-to-r from-indigo-600/20 to-cyan-500/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                <span className="relative text-white flex items-center gap-2">
+                  Vào Dashboard <ArrowRight className="h-4 w-4 text-indigo-400" />
+                </span>
+              </Link>
+            </>
+          ) : (
+            <>
+              <Link href="/login" className="text-sm font-semibold text-slate-300 hover:text-white transition-colors">
+                Đăng nhập
+              </Link>
+              <Link href="/register" className="relative group px-5 py-2.5 rounded-xl font-semibold text-sm transition-all duration-300 overflow-hidden glass-card hover:border-indigo-500/50">
+                <span className="absolute inset-0 w-full h-full bg-gradient-to-r from-indigo-600/20 to-cyan-500/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                <span className="relative text-white flex items-center gap-2">
+                  Đăng ký <ArrowRight className="h-4 w-4 text-indigo-400" />
+                </span>
+              </Link>
+            </>
+          )}
         </div>
       </header>
 
@@ -80,9 +118,15 @@ export default function LandingPage() {
 
             {/* CTAs */}
             <div className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start">
-              <Link href="/login" className="px-8 py-4 rounded-xl bg-gradient-to-r from-indigo-600 to-cyan-500 hover:from-indigo-500 hover:to-cyan-400 font-bold text-white shadow-lg glow-indigo transition-all duration-300 transform hover:-translate-y-0.5 flex items-center justify-center gap-2">
-                Bắt Đầu Ngay <ArrowRight className="h-5 w-5" />
-              </Link>
+              {!loading && user ? (
+                <Link href="/dashboard" className="px-8 py-4 rounded-xl bg-gradient-to-r from-indigo-600 to-cyan-500 hover:from-indigo-500 hover:to-cyan-400 font-bold text-white shadow-lg glow-indigo transition-all duration-300 transform hover:-translate-y-0.5 flex items-center justify-center gap-2">
+                  Vào Dashboard <ArrowRight className="h-5 w-5" />
+                </Link>
+              ) : (
+                <Link href="/login" className="px-8 py-4 rounded-xl bg-gradient-to-r from-indigo-600 to-cyan-500 hover:from-indigo-500 hover:to-cyan-400 font-bold text-white shadow-lg glow-indigo transition-all duration-300 transform hover:-translate-y-0.5 flex items-center justify-center gap-2">
+                  Bắt Đầu Ngay <ArrowRight className="h-5 w-5" />
+                </Link>
+              )}
               <a href="#features" className="px-8 py-4 rounded-xl bg-slate-900/50 hover:bg-slate-900 border border-white/5 hover:border-white/10 font-bold text-slate-300 transition-all duration-300 flex items-center justify-center gap-2">
                 Tìm hiểu chi tiết
               </a>
