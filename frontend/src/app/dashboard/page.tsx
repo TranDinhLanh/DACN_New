@@ -17,6 +17,7 @@ import {
   Edit,
   ArrowUpRight,
   RefreshCw,
+  Calendar,
 } from "lucide-react";
 import { api } from "@/lib/api";
 
@@ -75,9 +76,10 @@ export default function Dashboard() {
     "Entertainment": 10,
     "Other": 10
   });
-
   // Tab/Screen navigation State
-  const [activeTab, setActiveTab] = useState<"overview" | "add" | "ocr" | "budgets" | "security" | "history" | "recurring">("overview");
+  const [activeTab, setActiveTab] = useState<
+    "overview" | "add" | "ocr" | "budgets" | "security" | "history" | "recurring" | "events"
+  >("overview");
 
   // Edit Transaction states
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
@@ -119,6 +121,82 @@ export default function Dashboard() {
     "Tôi đã chi tiêu bao nhiêu?",
     "Số dư tài khoản hiện tại?"
   ]);
+
+  // Events tab states
+  const [events, setEvents] = useState<any[]>([]);
+  const [showCreateEventForm, setShowCreateEventForm] = useState(false);
+  const [newEventName, setNewEventName] = useState("");
+  const [newEventBudget, setNewEventBudget] = useState("");
+  const [newEventStartDate, setNewEventStartDate] = useState("");
+  const [newEventEndDate, setNewEventEndDate] = useState("");
+  const [newEventCompleted, setNewEventCompleted] = useState(false);
+  
+  const [selectedEventForDetail, setSelectedEventForDetail] = useState<any | null>(null);
+  const [selectedEventDetail, setSelectedEventDetail] = useState<any | null>(null);
+  const [eventId, setEventId] = useState<string>("");
+
+  const fetchEvents = () => {
+    api.getEvents()
+      .then(data => {
+        setEvents(data || []);
+      })
+      .catch(err => console.error("Failed to load events:", err));
+  };
+
+  const handleCreateEvent = (e: React.FormEvent) => {
+    e.preventDefault();
+    const rawBudget = Number(cleanVNDString(newEventBudget)) || 0;
+    
+    api.createEvent({
+      name: newEventName,
+      budget_limit: rawBudget,
+      start_date: newEventStartDate || undefined,
+      end_date: newEventEndDate || undefined,
+      is_completed: newEventCompleted
+    })
+      .then(() => {
+        setNewEventName("");
+        setNewEventBudget("");
+        setNewEventStartDate("");
+        setNewEventEndDate("");
+        setNewEventCompleted(false);
+        setShowCreateEventForm(false);
+        fetchEvents();
+      })
+      .catch(err => console.error("Failed to create event:", err));
+  };
+
+  const handleDeleteEvent = (id: string) => {
+    if (confirm("Bạn có chắc chắn muốn xóa sự kiện này? Các giao dịch liên quan sẽ không bị xóa nhưng sẽ được gỡ khỏi sự kiện.")) {
+      api.deleteEvent(id)
+        .then(() => {
+          if (selectedEventForDetail?.id === id) {
+            setSelectedEventForDetail(null);
+            setSelectedEventDetail(null);
+          }
+          fetchEvents();
+          api.getTransactions()
+            .then(data => setTransactions(data || []))
+            .catch(err => console.error(err));
+        })
+        .catch(err => console.error("Failed to delete event:", err));
+    }
+  };
+
+  const handleSelectEventForDetail = (id: string) => {
+    if (selectedEventForDetail?.id === id) {
+      setSelectedEventForDetail(null);
+      setSelectedEventDetail(null);
+    } else {
+      const event = events.find(e => e.id === id);
+      setSelectedEventForDetail(event);
+      api.getEventDetail(id)
+        .then(detail => {
+          setSelectedEventDetail(detail);
+        })
+        .catch(err => console.error("Failed to load event details:", err));
+    }
+  };
 
   // Load chats from localStorage on mount
   useEffect(() => {
@@ -328,6 +406,7 @@ export default function Dashboard() {
     api.getMe()
       .then(userData => {
         setUser(userData);
+        fetchEvents();
       })
       .catch(err => {
         console.error("Auth verification failed:", err);
@@ -366,10 +445,12 @@ export default function Dashboard() {
       category: data.category,
       description: data.description,
       transaction_date: data.transaction_date,
-      merchant_name: data.merchant_name
+      merchant_name: data.merchant_name,
+      event_id: data.event_id || undefined
     })
       .then(savedTx => {
         setTransactions(prev => [savedTx, ...prev]);
+        fetchEvents();
 
         if (data.type === "expense") {
           setBudgets(prev => prev.map(b => {
@@ -704,6 +785,21 @@ export default function Dashboard() {
               Giao dịch định kỳ
             </button>
 
+            <button 
+              onClick={() => {
+                setActiveTab("events");
+                fetchEvents();
+              }}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 ${
+                activeTab === "events" 
+                  ? "bg-indigo-600/25 border border-indigo-500/30 text-white" 
+                  : "text-slate-400 hover:bg-slate-900 hover:text-white"
+              }`}
+            >
+              <Calendar className="h-4.5 w-4.5" />
+              Sự kiện & Chuyến đi
+            </button>
+
             <button
               onClick={() => setActiveTab("security")}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 ${activeTab === "security"
@@ -763,6 +859,7 @@ export default function Dashboard() {
             onCancel={() => setActiveTab("overview")}
             initialType="expense"
             budgets={budgets}
+            events={events}
           />
         )}
 
@@ -795,6 +892,205 @@ export default function Dashboard() {
 
         {activeTab === "security" && (
           <SecurityTab />
+        )}
+
+        {/* TAB 6: EVENTS & TRIP BUDGETING */}
+        {activeTab === "events" && (
+          <div className="space-y-8">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div>
+                <h2 className="text-2xl font-extrabold text-white flex items-center gap-2">
+                  Sự kiện & Chuyến đi <Calendar className="h-5 w-5 text-indigo-400" />
+                </h2>
+                <p className="text-slate-400 text-sm mt-0.5">Phân vùng ngân sách cho các chuyến đi chơi, đám cưới, dự án...</p>
+              </div>
+              <button 
+                onClick={() => {
+                  setShowCreateEventForm(!showCreateEventForm);
+                  setSelectedEventForDetail(null);
+                }} 
+                className="px-4 py-2.5 rounded-xl text-xs font-bold bg-indigo-600 text-white glow-indigo hover:bg-indigo-500 transition-all flex items-center gap-1.5"
+              >
+                <Plus className="h-4 w-4" /> {showCreateEventForm ? "Đóng Form" : "Tạo Sự kiện Mới"}
+              </button>
+            </div>
+
+            {/* Form tạo sự kiện mới */}
+            {showCreateEventForm && (
+              <div className="max-w-xl glass-card rounded-2xl p-6 border border-white/5 space-y-4">
+                <h3 className="text-sm font-bold text-white">Thêm Sự Kiện / Chuyến Đi Mới</h3>
+                <form onSubmit={handleCreateEvent} className="space-y-4 text-xs">
+                  <div>
+                    <label className="text-slate-400 block mb-1 font-semibold">Tên sự kiện</label>
+                    <input 
+                      type="text"
+                      value={newEventName}
+                      onChange={(e) => setNewEventName(e.target.value)}
+                      placeholder="Ví dụ: Du lịch Đà Lạt, Mua quà tết..."
+                      className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-2.5 text-white"
+                      required
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-slate-400 block mb-1 font-semibold">Ngân sách dự trù (VND)</label>
+                      <input 
+                        type="text"
+                        value={newEventBudget}
+                        onChange={(e) => setNewEventBudget(formatVNDString(e.target.value))}
+                        placeholder="Ví dụ: 5.000.000"
+                        className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-2.5 text-emerald-400 font-bold"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block mb-1 font-semibold">Trạng thái hoàn thành</label>
+                      <select 
+                        value={newEventCompleted ? "true" : "false"}
+                        onChange={(e) => setNewEventCompleted(e.target.value === "true")}
+                        className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-2.5 text-white"
+                      >
+                        <option value="false">Đang diễn ra</option>
+                        <option value="true">Đã hoàn thành</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-slate-400 block mb-1 font-semibold">Ngày bắt đầu</label>
+                      <input 
+                        type="date"
+                        value={newEventStartDate}
+                        onChange={(e) => setNewEventStartDate(e.target.value)}
+                        className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-2.5 text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block mb-1 font-semibold">Ngày kết thúc</label>
+                      <input 
+                        type="date"
+                        value={newEventEndDate}
+                        onChange={(e) => setNewEventEndDate(e.target.value)}
+                        className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-2.5 text-white"
+                      />
+                    </div>
+                  </div>
+                  <button type="submit" className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold transition-all">
+                    Tạo Sự Kiện
+                  </button>
+                </form>
+              </div>
+            )}
+
+            {/* Grid danh sách sự kiện */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {events.map((event) => {
+                const isSelected = selectedEventForDetail?.id === event.id;
+                const percent = event.budget_limit > 0 ? Math.min(100, Math.round((event.total_spent / event.budget_limit) * 100)) : 0;
+                
+                return (
+                  <div key={event.id} className={`glass-card rounded-2xl p-6 border transition-all ${isSelected ? 'border-indigo-500' : 'border-white/5'}`}>
+                    <div className="flex items-start justify-between">
+                       <div>
+                         <h3 className="text-base font-extrabold text-white">{event.name}</h3>
+                         <p className="text-[10px] text-slate-500 mt-1 flex items-center gap-1">
+                           <Calendar className="h-3 w-3 text-indigo-400" />
+                           {event.start_date ? event.start_date : "?"} đến {event.end_date ? event.end_date : "?"}
+                         </p>
+                       </div>
+                       <div className="flex items-center gap-2">
+                         {event.is_completed ? (
+                           <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase">
+                             Hoàn thành
+                           </span>
+                         ) : (
+                           <span className="bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase">
+                             Đang diễn ra
+                           </span>
+                         )}
+                         <button 
+                           onClick={() => handleDeleteEvent(event.id)} 
+                           className="text-slate-500 hover:text-rose-500 p-1.5 rounded-lg hover:bg-rose-500/10 transition-all" 
+                           title="Xóa sự kiện"
+                         >
+                           <Trash2 className="h-3.5 w-3.5" />
+                         </button>
+                       </div>
+                    </div>
+
+                    {/* Tiến trình ngân sách */}
+                    <div className="mt-5 space-y-1.5">
+                      <div className="flex items-center justify-between text-xs font-semibold">
+                        <span className="text-slate-400">Ngân sách chi tiêu</span>
+                        <span className="text-slate-300 font-bold">
+                          Đã chi <span className={event.is_over_budget ? "text-rose-400" : "text-emerald-400"}>{event.total_spent.toLocaleString()}đ</span> / {event.budget_limit.toLocaleString()}đ ({percent}%)
+                        </span>
+                      </div>
+                      <div className="h-2 w-full bg-slate-900 rounded-full overflow-hidden border border-white/5">
+                        <div className={`h-full rounded-full ${event.is_over_budget ? 'bg-rose-500 animate-pulse' : 'bg-indigo-500'}`} style={{ width: `${percent}%` }} />
+                      </div>
+                      <div className="flex justify-between text-[10px] text-slate-500 font-medium mt-1">
+                        <span>Còn lại: {event.remaining_budget.toLocaleString()}đ</span>
+                        {event.is_over_budget && <span className="text-rose-400 font-bold flex items-center gap-0.5"><AlertTriangle className="h-3 w-3" /> Vượt ngân sách!</span>}
+                      </div>
+                    </div>
+
+                    {/* Nút xem giao dịch chi tiết */}
+                    <div className="mt-5 flex gap-2">
+                       <button 
+                         onClick={() => handleSelectEventForDetail(event.id)}
+                         className="flex-1 py-2 rounded-xl border border-white/5 hover:border-white/10 hover:bg-white/[0.02] text-xs font-bold text-slate-300 transition-all"
+                       >
+                         {isSelected ? "Đóng xem giao dịch" : "Xem chi tiết giao dịch"}
+                       </button>
+                       {!event.is_completed && (
+                         <button 
+                           onClick={() => {
+                             setCategory("Food & Beverage");
+                             setEventId(event.id);
+                             setActiveTab("add");
+                           }}
+                           className="px-3.5 py-2 rounded-xl bg-slate-900 border border-white/5 hover:border-white/10 text-xs font-bold text-indigo-400 transition-all"
+                           title="Ghi thêm khoản chi cho sự kiện này"
+                         >
+                           + Ghi chi tiêu
+                         </button>
+                       )}
+                    </div>
+
+                    {/* Hiển thị chi tiết giao dịch nếu được chọn */}
+                    {isSelected && selectedEventDetail && (
+                       <div className="mt-5 pt-5 border-t border-white/5 space-y-3">
+                         <h4 className="text-xs font-bold text-slate-300">Danh sách giao dịch thuộc Sự kiện</h4>
+                         {selectedEventDetail.transactions && selectedEventDetail.transactions.length > 0 ? (
+                           <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                             {selectedEventDetail.transactions.map((tx: any) => (
+                               <div key={tx.id} className="flex items-center justify-between text-[11px] p-2.5 rounded-xl bg-slate-950/60 border border-white/5">
+                                 <div>
+                                   <p className="font-bold text-slate-200">{tx.description}</p>
+                                   <p className="text-[9px] text-slate-500">{tx.transaction_date}</p>
+                                 </div>
+                                 <span className="font-extrabold text-rose-400">-{tx.amount.toLocaleString()}đ</span>
+                               </div>
+                             ))}
+                           </div>
+                         ) : (
+                           <p className="text-[10px] text-slate-500 italic">Chưa có giao dịch chi tiêu nào được gán cho sự kiện này.</p>
+                         )}
+                       </div>
+                    )}
+
+                  </div>
+                );
+              })}
+
+              {events.length === 0 && (
+                <div className="col-span-2 text-center py-10 glass-card rounded-2xl border border-white/5 text-slate-500 text-xs">
+                  <Calendar className="h-8 w-8 mx-auto text-slate-600 mb-2" />
+                  Bạn chưa tạo sự kiện hoặc chuyến đi nào. Nhấn nút "Tạo Sự kiện Mới" để bắt đầu!
+                </div>
+              )}
+            </div>
+          </div>
         )}
       </main>
 

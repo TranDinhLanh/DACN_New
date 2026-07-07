@@ -23,6 +23,7 @@ class User(Base):
     ocr_logs = relationship("OCRLog", back_populates="user", cascade="all, delete-orphan")
     forecasts = relationship("Forecast", back_populates="user", cascade="all, delete-orphan")
     recurring_templates = relationship("RecurringTemplate", back_populates="user", cascade="all, delete-orphan")
+    events = relationship("Event", back_populates="user", cascade="all, delete-orphan")
 
 
 class Transaction(Base):
@@ -37,11 +38,13 @@ class Transaction(Base):
     transaction_date = Column(Date, nullable=False, default=lambda: datetime.now(timezone.utc).date())
     merchant_name = Column(String, nullable=True)
     ocr_log_id = Column(UUID(as_uuid=True), ForeignKey("ocr_logs.id", ondelete="SET NULL"), nullable=True)
+    event_id = Column(UUID(as_uuid=True), ForeignKey("events.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     # Relationships
     user = relationship("User", back_populates="transactions")
     ocr_log = relationship("OCRLog", back_populates="transactions")
+    event = relationship("Event", back_populates="transactions")
 
 
 class Budget(Base):
@@ -87,7 +90,6 @@ class Forecast(Base):
     # Relationships
     user = relationship("User", back_populates="forecasts")
 
-
 class RecurringTemplate(Base):
     __tablename__ = "recurring_templates"
 
@@ -108,3 +110,19 @@ class RecurringTemplate(Base):
 
     # Relationships
     user = relationship("User", back_populates="recurring_templates")
+
+class Event(Base):
+    __tablename__ = "events"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    name = Column(String, nullable=False)
+    budget_limit = Column(Float, default=0.0)
+    start_date = Column(Date, nullable=True)
+    end_date = Column(Date, nullable=True)
+    is_completed = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    # Relationships
+    user = relationship("User", back_populates="events")
+    transactions = relationship("Transaction", back_populates="event")

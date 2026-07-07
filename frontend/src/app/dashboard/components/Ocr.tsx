@@ -16,6 +16,7 @@ export default function OcrTab({ onSaveSuccess, onCancel }: OcrTabProps) {
   const [ocrExtractedData, setOcrExtractedData] = useState<any | null>(null);
   const [ocrPreviewUrl, setOcrPreviewUrl] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
+  const [isSavingTx, setIsSavingTx] = useState(false);
 
   // Form states for pre-populated OCR data review
   const [merchant, setMerchant] = useState("");
@@ -87,6 +88,7 @@ export default function OcrTab({ onSaveSuccess, onCancel }: OcrTabProps) {
     const rawAmount = Number(cleanVNDString(amount));
     if (!rawAmount || isNaN(rawAmount)) return;
 
+    setIsSavingTx(true);
     api.createTransaction({
       amount: rawAmount,
       type: "expense",
@@ -118,6 +120,9 @@ export default function OcrTab({ onSaveSuccess, onCancel }: OcrTabProps) {
           merchant_name: merchant || undefined,
         };
         onSaveSuccess(newTx);
+      })
+      .finally(() => {
+        setIsSavingTx(false);
       });
   };
 
@@ -348,8 +353,19 @@ export default function OcrTab({ onSaveSuccess, onCancel }: OcrTabProps) {
 
                 {/* Submit and Cancel Buttons */}
                 <div className="pt-4 flex gap-4">
-                  <button type="submit" className="flex-1 py-3.5 rounded-xl bg-gradient-to-r from-emerald-600 to-indigo-600 hover:from-emerald-500 hover:to-indigo-500 text-white text-xs font-bold transition-all glow-indigo">
-                    Lưu Khoản Chi & Đóng Form
+                  <button
+                    type="submit"
+                    disabled={isSavingTx}
+                    className="flex-1 py-3.5 rounded-xl bg-gradient-to-r from-emerald-600 to-indigo-600 hover:from-emerald-500 hover:to-indigo-500 text-white text-xs font-bold transition-all glow-indigo flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isSavingTx ? (
+                      <>
+                        <RefreshCw className="h-4 w-4 animate-spin" />
+                        <span>Đang lưu...</span>
+                      </>
+                    ) : (
+                      "Lưu Khoản Chi & Đóng Form"
+                    )}
                   </button>
                   <button type="button" onClick={handleReset} className="px-5 py-3.5 rounded-xl bg-slate-900 border border-white/5 hover:border-white/10 text-slate-400 text-xs font-bold transition-all">
                     Hủy & Quét lại

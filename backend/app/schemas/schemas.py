@@ -52,6 +52,7 @@ class TransactionBase(BaseModel):
     description: Optional[str] = None
     transaction_date: date
     merchant_name: Optional[str] = None
+    event_id: Optional[UUID] = None
 
 class TransactionCreate(TransactionBase):
     ocr_log_id: Optional[UUID] = None
@@ -63,6 +64,7 @@ class TransactionUpdate(BaseModel):
     description: Optional[str] = None
     transaction_date: Optional[date] = None
     merchant_name: Optional[str] = None
+    event_id: Optional[UUID] = None
 
 class TransactionResponse(TransactionBase):
     id: UUID
@@ -132,7 +134,6 @@ class ChatResponse(BaseModel):
     response: str
     suggested_questions: Optional[List[str]] = None
 
-
 # --- RECURRING TEMPLATE SCHEMAS ---
 
 class RecurringTemplateCreate(BaseModel):
@@ -176,6 +177,55 @@ class RecurringTemplateResponse(BaseModel):
     is_active: bool
     is_auto_execute: bool
     created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# --- EVENT SCHEMAS ---
+
+class EventBase(BaseModel):
+    name: str
+    budget_limit: float = Field(0.0, ge=0.0)
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
+    is_completed: bool = False
+
+class EventCreate(EventBase):
+    pass
+
+class EventUpdate(BaseModel):
+    name: Optional[str] = None
+    budget_limit: Optional[float] = Field(None, ge=0.0)
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
+    is_completed: Optional[bool] = None
+
+class EventResponse(EventBase):
+    id: UUID
+    user_id: UUID
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class EventDetailResponse(EventResponse):
+    transactions: List[TransactionResponse] = []
+    total_spent: float = 0.0
+    remaining_budget: float = 0.0
+    percent_used: float = 0.0
+    is_over_budget: bool = False
+
+    class Config:
+        from_attributes = True
+
+
+class EventListResponse(EventResponse):
+    total_spent: float = 0.0
+    remaining_budget: float = 0.0
+    percent_used: float = 0.0
+    is_over_budget: bool = False
 
     class Config:
         from_attributes = True
