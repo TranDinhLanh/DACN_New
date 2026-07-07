@@ -1,99 +1,134 @@
-description,category
-highlands coffee,Food & Beverage
-phuc long coffee tea,Food & Beverage
-starbucks coffee,Food & Beverage
-the coffee house,Food & Beverage
-gong cha tra sua,Food & Beverage
-tiem pho ngon,Food & Beverage
-bun bo hue co do,Food & Beverage
-com tam cali,Food & Beverage
-kfc landmark,Food & Beverage
-lotteria nguyen tri phuong,Food & Beverage
-jollibee vincom,Food & Beverage
-pizza hut khanh hoi,Food & Beverage
-quan lau nuong,Food & Beverage
-tra sua koi the,Food & Beverage
-tocotoco milktea,Food & Beverage
-banh mi huynh hoa,Food & Beverage
-bun cha obama,Food & Beverage
-starbucks reserve,Food & Beverage
-haidilao hotpot,Food & Beverage
-kichi kichi lẩu,Food & Beverage
-gogi house thit nuong,Food & Beverage
-the alley tra sua,Food & Beverage
-ca phe sua da,Food & Beverage
-an sang hu tieu,Food & Beverage
-an trua van phong,Food & Beverage
-an toi nha hang,Food & Beverage
-grab ride taxi,Transportation
-grabcar di lam,Transportation
-grabbike di hoc,Transportation
-gojek ride,Transportation
-be car phan xich long,Transportation
-be bike,Transportation
-taxi mai linh,Transportation
-taxi vinasun,Transportation
-do xang petrolimex,Transportation
-xang dau pvoil,Transportation
-ve xe khach phuong trang,Transportation
-ve xe hoa mai,Transportation
-mua ve may bay vietjet,Transportation
-ve may bay vietnam airlines,Transportation
-mua ve tau hoa,Transportation
-nap tien tai khoan grab,Transportation
-ve xe bus,Transportation
-nap card grab,Transportation
-nap xang xe may,Transportation
-shopee pay transaction,Shopping
-lazada vn order,Shopping
-tiki mua sach,Shopping
-sieu thi winmart,Shopping
-winmart+ quan 1,Shopping
-coopmart cong hoa,Shopping
-lottemart quan 7,Shopping
-bach hoa xanh muasam,Shopping
-circle k tiencich,Shopping
-ministop store,Shopping
-7-eleven nguyen thi minh khai,Shopping
-gs25 dien bien phu,Shopping
-mua quan ao zara,Shopping
-uniqlo saigon centre,Shopping
-hm saigon tourist,Shopping
-mua giay adidas,Shopping
-nike store dong khoi,Shopping
-mua sam my pham,Shopping
-mua cho thuc pham,Shopping
-aeon mall tan phu,Shopping
-emart go vap,Shopping
-tiem tap hoa,Shopping
-cgv vincom center,Entertainment
-cgv hung vuong plaza,Entertainment
-lotte cinema go vap,Entertainment
-galaxy nguyen du,Entertainment
-rap chieu phim quoc thanh,Entertainment
-netflix monthly subscription,Entertainment
-spotify premium family,Entertainment
-nap game steam,Entertainment
-nap game garena,Entertainment
-playstation network store,Entertainment
-di bar beer club,Entertainment
-pub acoustic music,Entertainment
-karaoke gia dinh,Entertainment
-ve xem ca nhac,Entertainment
-ve xem trien lam,Entertainment
-khu vui choi dam sen,Entertainment
-mua ve vinwonders,Entertainment
-hoa don dien luc evn,Bills & Utilities
-tien dien thang,Bills & Utilities
-hoa don nuoc cap nuoc gia dinh,Bills & Utilities
-thanh toan tien nuoc,Bills & Utilities
-cuoc internet viettel,Bills & Utilities
-wifi fpt telecom,Bills & Utilities
-internet vnpt,Bills & Utilities
-cuoc mobifone tra sau,Bills & Utilities
-nap the viettel,Bills & Utilities
-nap card vinaphone,Bills & Utilities
-tien thue nha chung cu,Bills & Utilities
-thanh toan cuoc cap quang,Bills & Utilities
-phi quan ly chung cu,Bills & Utilities
-dong tien rac,Bills & Utilities
+merchant_name,description,category
+Highlands Coffee,ca phe sua da,Food & Beverage
+Phuc Long Coffee Tea,tra dao phuc long,Food & Beverage
+Starbucks Coffee,caramel macchiato,Food & Beverage
+The Coffee House,bac xiu nong,Food & Beverage
+Gong Cha,tra sua gong cha,Food & Beverage
+KFC,ga ran kfc,Food & Beverage
+Lotteria,hamburger lotteria,Food & Beverage
+Jollibee,ga chien jollibee,Food & Beverage
+Pizza Hut,pizza hai san,Food & Beverage
+Haidilao,lau hai san haidilao,Food & Beverage
+Kichi Kichi,lau nuong kichi,Food & Beverage
+Gogi House,thit nuong gogi,Food & Beverage
+The Alley,tra sua the alley,Food & Beverage
+Tocotoco,milktea tocotoco,Food & Beverage
+McDonald's,ga ran mcdonalds,Food & Beverage
+Burger King,whopper burger king,Food & Beverage
+Subway,banh mi subway,Food & Beverage
+Bun Bo Hue Co Do,bun bo hue,Food & Beverage
+Pho 24,pho bo pho 24,Food & Beverage
+Com Tam Cali,com tam bi suon,Food & Beverage
+Banh Mi Huynh Hoa,banh mi op la,Food & Beverage
+Bun Cha Obama,bun cha ha noi,Food & Beverage
+Quan Lau Nuong,lau bo nuong,Food & Beverage
+An Sang,hu tieu nam vang,Food & Beverage
+An Trua,com van phong,Food & Beverage
+An Toi,nha hang hai san,Food & Beverage
+Cong Caphe,ca phe cong,Food & Beverage
+Phindeli,ca phe phindeli,Food & Beverage
+Trung Nguyen,ca phe trung nguyen,Food & Beverage
+Runam Bistro,ca phe runam,Food & Beverage
+Milano Coffee,ca phe milano,Food & Beverage
+Ding Tea,tra sua ding tea,Food & Beverage
+Royal Tea,tra sua royal,Food & Beverage
+Tuk Tuk,tra sua tuk tuk,Food & Beverage
+Bobapop,tra sua boba,Food & Beverage
+Xoi Ga,xoi man buoi sang,Food & Beverage
+Banh Canh,banh canh cua,Food & Beverage
+Mi Quang,mi quang da nang,Food & Beverage
+Bun Rieu,bun rieu cua,Food & Beverage
+Banh Xeo,banh xeo gion,Food & Beverage
+GrabBike,,Transportation
+GrabCar,di lam vincom,Transportation
+Gojek,xe om gojek,Transportation
+Be Car,di san bay be car,Transportation
+Be Bike,be bike di hoc,Transportation
+Taxi Mai Linh,taxi di benh vien,Transportation
+Taxi Vinasun,vinasun di khach san,Transportation
+Petrolimex,do xang xe may,Transportation
+PVOIL,xang dau pvoil,Transportation
+Phuong Trang,ve xe khach da lat,Transportation
+Hoa Mai,ve xe hoa mai nha trang,Transportation
+VietJet Air,mua ve may bay vietjet,Transportation
+Vietnam Airlines,ve may bay hanoi,Transportation
+Bamboo Airways,ve bamboo di hue,Transportation
+Ve Tau Hoa,tau se bac nam,Transportation
+Xe Bus,ve xe bus thang,Transportation
+Nap Xang,nap xang xe may,Transportation
+Nap Card Grab,nap tien vi grab,Transportation
+Xe Dap Dien,thue xe dap dien,Transportation
+Dichung,dichung xe dua don,Transportation
+Shopee,mua hang shopee,Shopping
+Lazada,dat hang lazada vn,Shopping
+Tiki,mua sach tiki,Shopping
+WinMart,sieu thi winmart,Shopping
+WinMart+,winmart+ tien loi,Shopping
+CoopMart,cho sieu thi coop,Shopping
+LotteMart,sieu thi lotte,Shopping
+Bach Hoa Xanh,thuc pham bach hoa,Shopping
+Circle K,cua hang tien loi circle k,Shopping
+MiniStop,ministop mua do an,Shopping
+7-Eleven,seven eleven nuoc uong,Shopping
+GS25,gs25 do an nhanh,Shopping
+AEON Mall,mua sam aeon,Shopping
+EMART,emart go vap,Shopping
+Zara,quan ao zara,Shopping
+Uniqlo,ao thun uniqlo,Shopping
+H&M,do mac hm,Shopping
+Adidas,giay the thao adidas,Shopping
+Nike,giay nike chinh hang,Shopping
+My Pham,my pham korean,Shopping
+Tap Hoa,tap hoa co hoa,Shopping
+Guardian,my pham guardian,Shopping
+Watsons,cham soc ca nhan watsons,Shopping
+Muji,do dung muji,Shopping
+Daiso,do gia dung daiso,Shopping
+Decathlon,do the thao decathlon,Shopping
+Cellphone S,mua op dien thoai,Shopping
+Phong Vu,mua phu kien may tinh,Shopping
+FPT Shop,mua sac du phong,Shopping
+Tien Phong,mua do dien tu,Shopping
+Cho Ben Thanh,mua sam cho ben thanh,Shopping
+Cho Tan Binh,thuc pham cho tan binh,Shopping
+CGV,ve xem phim cgv,Entertainment
+Lotte Cinema,rap chieu phim lotte,Entertainment
+Galaxy Cinema,galaxy nguyen du,Entertainment
+Rap Quoc Thanh,chieu phim quoc thanh,Entertainment
+Netflix,dang ky netflix monthly,Entertainment
+Spotify,spotify premium,Entertainment
+Steam,nap game steam,Entertainment
+Garena,nap kim cuong garena,Entertainment
+PlayStation,playstation network,Entertainment
+Xbox Game Pass,xbox game pass monthly,Entertainment
+YouTube Premium,youtube premium,Entertainment
+Tiktok Coins,nap xu tiktok,Entertainment
+Bar Music,di bar uong ruou,Entertainment
+Pub Acoustic,karaoke pub,Entertainment
+Karaoke Gia Dinh,karaoke sang,Entertainment
+Ve Ca Nhac,ve xem concert,Entertainment
+Ve Trien Lam,xem trien lam nghe thuat,Entertainment
+Dam Sen,ve khu vui choi,Entertainment
+Vinwonders,vinwonders phu quoc,Entertainment
+Vung Tau,du lich vung tau,Entertainment
+Da Lat,di du lich da lat,Entertainment
+EVN,hoa don tien dien thang,Bills & Utilities
+Cap Nuoc,tien nuoc thang,Bills & Utilities
+Viettel,cuoc mang viettel tra sau,Bills & Utilities
+Mobifone,nap the mobifone,Bills & Utilities
+Vinaphone,nap card vinaphone,Bills & Utilities
+FPT Telecom,cuoc internet fpt,Bills & Utilities
+VNPT,wifi vnpt thang,Bills & Utilities
+Thue Nha,tien thue nha thang,Bills & Utilities
+Phi Quan Ly,phi quan ly chung cu,Bills & Utilities
+Rac Thai,dong tien rac thang,Bills & Utilities
+Cap Quang,thanh toan cap quang,Bills & Utilities
+Nhan Van,dong hoc phi nhan van,Bills & Utilities
+RMIT,hoc phi rmit,Bills & Utilities
+Hoc Phi,dong hoc phi thang,Bills & Utilities
+Bao Hiem,phi bao hiem y te,Bills & Utilities
+Ngan Hang,phi dich vu ngan hang,Bills & Utilities
+Vay Tien,tra gop vay ngan hang,Bills & Utilities
+The Tin Dung,thanh toan the tin dung,Bills & Utilities
+Bao Hiem Xe,phi bao hiem xe may,Bills & Utilities
+Dien Thoai,cuoc dien thoai co dinh,Bills & Utilities

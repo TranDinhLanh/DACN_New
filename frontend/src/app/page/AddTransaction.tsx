@@ -11,22 +11,26 @@ interface AddTransactionTabProps {
     description: string;
     transaction_date: string;
     merchant_name?: string;
+    event_id?: string;
   }) => void;
   onCancel: () => void;
   initialType?: "income" | "expense";
   budgets?: { category: string }[];
+  events?: { id: string; name: string; budget_limit: number; is_completed: boolean }[];
 }
 
 export default function AddTransactionTab({
   onSave,
   onCancel,
   initialType = "expense",
+  events = [],
 }: AddTransactionTabProps) {
   const [type, setType] = useState<"income" | "expense">(initialType);
   const [amount, setAmount] = useState("");
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState("Other");
   const [merchant, setMerchant] = useState("");
+  const [eventId, setEventId] = useState("");
   const [transactionDate, setTransactionDate] = useState(() => {
     return new Date().toISOString().split("T")[0];
   });
@@ -172,6 +176,7 @@ export default function AddTransactionTab({
       description: description || "Giao dịch không mô tả",
       transaction_date: transactionDate,
       merchant_name: merchant || undefined,
+      event_id: eventId || undefined,
     });
 
     // Reset Form
@@ -179,6 +184,7 @@ export default function AddTransactionTab({
     setDescription("");
     setMerchant("");
     setCategory(type === "income" ? "Salary" : "Other");
+    setEventId("");
   };
 
   return (
@@ -287,6 +293,23 @@ export default function AddTransactionTab({
             )}
           </select>
         </div>
+
+        {/* Event selection */}
+        {type === "expense" && events && events.length > 0 && (
+          <div>
+            <label className="text-xs text-slate-400 font-semibold block mb-2">Gán vào Sự kiện / Chuyến đi (Không bắt buộc)</label>
+            <select
+              value={eventId}
+              onChange={(e) => setEventId(e.target.value)}
+              className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500 text-white font-semibold"
+            >
+              <option value="">Không gán sự kiện (Chi tiêu thường ngày)</option>
+              {events.filter(e => !e.is_completed).map(e => (
+                <option key={e.id} value={e.id}>{e.name} (Hạn mức: {e.budget_limit.toLocaleString()}đ)</option>
+              ))}
+            </select>
+          </div>
+        )}
 
         {/* Merchant Store */}
         <div>

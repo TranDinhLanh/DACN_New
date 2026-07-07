@@ -16,6 +16,7 @@ export default function OcrTab({ onSaveSuccess, onCancel }: OcrTabProps) {
   const [ocrExtractedData, setOcrExtractedData] = useState<any | null>(null);
   const [ocrPreviewUrl, setOcrPreviewUrl] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
+  const [isSavingTx, setIsSavingTx] = useState(false);
 
   // Form states for pre-populated OCR data review
   const [merchant, setMerchant] = useState("");
@@ -68,7 +69,7 @@ export default function OcrTab({ onSaveSuccess, onCancel }: OcrTabProps) {
       setOcrExtractedData(parsedData);
       setOcrSuccess(true);
 
-      // Pre-fill editable form states from AI LayoutLMv3 result
+      // Pre-fill editable form states from AI OCR result
       setMerchant(parsedData.merchant || "Cửa hàng ăn uống");
       setAmount(parsedData.amount ? formatVNDString(parsedData.amount.toString()) : "0");
       setCategory(parsedData.category || "Food & Beverage");
@@ -87,6 +88,7 @@ export default function OcrTab({ onSaveSuccess, onCancel }: OcrTabProps) {
     const rawAmount = Number(cleanVNDString(amount));
     if (!rawAmount || isNaN(rawAmount)) return;
 
+    setIsSavingTx(true);
     api.createTransaction({
       amount: rawAmount,
       type: "expense",
@@ -118,6 +120,9 @@ export default function OcrTab({ onSaveSuccess, onCancel }: OcrTabProps) {
           merchant_name: merchant || undefined,
         };
         onSaveSuccess(newTx);
+      })
+      .finally(() => {
+        setIsSavingTx(false);
       });
   };
 
@@ -132,11 +137,11 @@ export default function OcrTab({ onSaveSuccess, onCancel }: OcrTabProps) {
     <div className="max-w-6xl mx-auto space-y-8">
       <div className="text-center space-y-2">
         <span className="bg-gradient-to-r from-indigo-500 to-cyan-400 text-white text-[10px] px-3 py-1 rounded-full font-bold uppercase tracking-wider glow-indigo">
-          AI Computer Vision & LayoutLMv3
+          PaddleOCR + AI Classifier
         </span>
         <h2 className="text-2xl font-extrabold text-white">Quét Hóa Đơn Chi Tiêu Thông Minh</h2>
         <p className="text-slate-400 text-xs max-w-lg mx-auto">
-          Tải lên ảnh hóa đơn của bạn. Mô hình học sâu **LayoutLMv3** sẽ tự động trích xuất thông tin, điền vào biểu mẫu để bạn rà soát và lưu.
+          Tải lên ảnh hóa đơn của bạn. Mô hình PaddleOCR sẽ tự động nhận diện chữ tiếng Việt, trích xuất thông tin và điền vào biểu mẫu để bạn rà soát và lưu.
         </p>
       </div>
 
@@ -176,7 +181,7 @@ export default function OcrTab({ onSaveSuccess, onCancel }: OcrTabProps) {
               <div>
                 <h4 className="font-bold text-white text-sm">AI OCR đang phân tích hóa đơn...</h4>
                 <p className="text-xs text-slate-500 mt-1">
-                  Mô hình LayoutLMv3 đang trích xuất Merchant, Total Amount và Ngày giao dịch
+                  PaddleOCR đang nhận diện chữ tiếng Việt và trích xuất thông tin hóa đơn
                 </p>
               </div>
             </div>
@@ -210,21 +215,16 @@ export default function OcrTab({ onSaveSuccess, onCancel }: OcrTabProps) {
                   Hệ thống đang chạy chế độ giả lập vì: <span className="text-amber-400 font-semibold">{ocrExtractedData.debug_message}</span>.
                 </p>
                 <div className="mt-3 p-3.5 rounded-xl bg-slate-950/60 border border-white/5 space-y-2 text-[11px]">
-                  <p className="font-bold text-slate-300">Để kích hoạt mô hình LayoutLMv3 đã train của bạn từ Google Colab:</p>
+                  <p className="font-bold text-slate-300">Để kích hoạt OCR thực trên ảnh hóa đơn thật:</p>
                   <ol className="list-decimal pl-4 space-y-1.5 text-slate-400">
                     <li>
-                      Cài đặt các gói AI trên máy tính cục bộ:
+                      Cài đặt PaddleOCR trên máy tính:
                       <code className="bg-slate-900 text-indigo-300 px-1.5 py-0.5 rounded ml-1 font-mono">
-                        pip install torch transformers paddleocr pillow
+                        pip install paddleocr paddlepaddle
                       </code>
                     </li>
-                    <li>Tải thư mục trọng số của mô hình LayoutLMv3 đã huấn luyện từ Colab/Drive về máy.</li>
-                    <li>
-                      Đổi tên thư mục thành <code className="bg-slate-900 text-indigo-300 px-1.5 py-0.5 rounded font-mono">layoutlmv3-receipt</code> và đặt tại đường dẫn:
-                      <code className="bg-slate-900 text-indigo-300 px-1.5 py-0.5 rounded block mt-1 font-mono w-fit">
-                        backend/app/ml_models/layoutlmv3-receipt/
-                      </code>
-                    </li>
+                    <li>Khởi động lại backend FastAPI sau khi cài xong.</li>
+                    <li>Upload ảnh hóa đơn — PaddleOCR sẽ tự động xử lý tiếng Việt.</li>
                   </ol>
                 </div>
               </div>
@@ -348,8 +348,19 @@ export default function OcrTab({ onSaveSuccess, onCancel }: OcrTabProps) {
 
                 {/* Submit and Cancel Buttons */}
                 <div className="pt-4 flex gap-4">
-                  <button type="submit" className="flex-1 py-3.5 rounded-xl bg-gradient-to-r from-emerald-600 to-indigo-600 hover:from-emerald-500 hover:to-indigo-500 text-white text-xs font-bold transition-all glow-indigo">
-                    Lưu Khoản Chi & Đóng Form
+                  <button
+                    type="submit"
+                    disabled={isSavingTx}
+                    className="flex-1 py-3.5 rounded-xl bg-gradient-to-r from-emerald-600 to-indigo-600 hover:from-emerald-500 hover:to-indigo-500 text-white text-xs font-bold transition-all glow-indigo flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isSavingTx ? (
+                      <>
+                        <RefreshCw className="h-4 w-4 animate-spin" />
+                        <span>Đang lưu...</span>
+                      </>
+                    ) : (
+                      "Lưu Khoản Chi & Đóng Form"
+                    )}
                   </button>
                   <button type="button" onClick={handleReset} className="px-5 py-3.5 rounded-xl bg-slate-900 border border-white/5 hover:border-white/10 text-slate-400 text-xs font-bold transition-all">
                     Hủy & Quét lại
@@ -365,9 +376,12 @@ export default function OcrTab({ onSaveSuccess, onCancel }: OcrTabProps) {
       <div className="p-5 rounded-2xl bg-indigo-950/20 border border-indigo-500/20 flex gap-3 text-xs text-indigo-300 max-w-4xl mx-auto">
         <Sparkles className="h-5 w-5 text-cyan-400 shrink-0 animate-pulse" />
         <div>
-          <h5 className="font-bold text-white">Cơ Chế Liên Kết Mô Hình LayoutLMv3 Thực Tế:</h5>
+          <h5 className="font-bold text-white">Cơ Chế Hoạt Động OCR Thực Tế:</h5>
           <p className="mt-1 leading-relaxed text-[11px] text-slate-400">
-            Tệp ảnh được upload trực tiếp từ máy của bạn qua endpoint `/api/v1/ocr/upload` của FastAPI. Backend lưu trữ tệp tin trong thư mục tĩnh tĩnh `/static/uploads/`, truyền đường dẫn cục bộ vào mô hình LayoutLMv3 huấn luyện, và trả về dữ liệu đối chiếu chính xác.
+            Ảnh hóa đơn được upload qua endpoint <code className="text-indigo-300 font-mono">/api/v1/ocr/upload</code> của FastAPI.
+            Backend lưu file vào <code className="text-indigo-300 font-mono">/static/uploads/</code>, chạy <strong className="text-slate-300">PaddleOCR</strong> để
+            nhận diện chữ tiếng Việt với confidence &gt; 50%, sau đó dùng <strong className="text-slate-300">Regex + ML Classifier</strong> để
+            bóc tách Merchant, Tổng tiền, Ngày và tự động gán danh mục giao dịch.
           </p>
         </div>
       </div>
