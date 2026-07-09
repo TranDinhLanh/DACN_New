@@ -6,7 +6,7 @@ from app.core.database import get_db
 from app.api.deps import get_current_user
 from app.models.models import Transaction, User, Event
 from app.schemas.schemas import TransactionCreate, TransactionResponse, TransactionUpdate
-from app.services.ai_classify import CategoryClassifier
+from app.services.ai_classify import classify_transaction
 
 router = APIRouter()
 
@@ -40,7 +40,10 @@ def create_transaction(
     category = transaction_in.category
     # Automatically classify category if it is 'Other' or left blank and a description is present
     if (category == "Other" or not category) and transaction_in.description:
-        category = CategoryClassifier.classify(transaction_in.description)
+        category = classify_transaction(
+            merchant_name=transaction_in.merchant_name or "",
+            description=transaction_in.description or ""
+        )
 
     # Validate event_id if provided
     if transaction_in.event_id:

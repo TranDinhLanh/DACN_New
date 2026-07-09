@@ -1,60 +1,78 @@
 """
 train_classifier.py
-Script chạy training CategoryClassifier từ file CSV.
+===================
+Script dùng để huấn luyện lại mô hình AI phân loại giao dịch.
 
 Cách dùng:
     cd backend
     python train_classifier.py
-    python train_classifier.py --csv data/my_data.csv --out app/services/models
+    python train_classifier.py --csv duong/dan/file.csv
+
+Khi nào cần chạy lại?
+    - Khi bổ sung thêm dữ liệu mới vào file CSV
+    - Khi muốn cải thiện độ chính xác của mô hình
+    - Khi thay đổi tập danh mục phân loại
 """
 
 import os
 import sys
-import argparse
 
+# Thêm thư mục backend vào đường dẫn Python để import được các module
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Train CategoryClassifier")
+def main():
+    """
+    Hàm main: Đọc tham số từ dòng lệnh và chạy quá trình huấn luyện.
+    """
+    import argparse
+
+    # Thiết lập parser để đọc tham số từ dòng lệnh
+    parser = argparse.ArgumentParser(description="Huấn luyện mô hình AI phân loại giao dịch")
     parser.add_argument(
         "--csv",
         default="vietnamese_transactions_dataset.csv",
-        help="Đường dẫn file CSV training data",
+        help="Đường dẫn đến file CSV chứa dữ liệu training",
     )
-    parser.add_argument(
-        "--out",
-        default=None,
-        help="Thư mục lưu model (mặc định: app/services/models/)",
-    )
+
     args = parser.parse_args()
 
+    # Kiểm tra file CSV có tồn tại không
     if not os.path.exists(args.csv):
-        print(f"❌ Không tìm thấy file: {args.csv}")
+        print("❌ Không tìm thấy file CSV: " + args.csv)
         sys.exit(1)
 
-    from app.services.ai_classify import CategoryClassifier
+    # Import hàm train từ module chính
+    from app.services.ai_classify import train_new_model
 
-    classifier = CategoryClassifier()
-    success = classifier.train(args.csv, save_dir=args.out)
+    # Chạy quá trình huấn luyện
+    is_success = train_new_model(csv_file_path=args.csv)
 
-    if success:
-        print("\n✅ Training hoàn tất! Kiểm tra phân loại thử:")
-        samples = [
+    if is_success:
+        # Kiểm tra thử kết quả sau khi train
+        print("\n  Kiểm tra thử một số giao dịch mẫu:")
+        from app.services.ai_classify import classify_transaction
+
+        sample_transactions = [
             ("Highlands Coffee", "ca phe sua da"),
             ("GrabCar",          "di lam vincom"),
             ("WinMart",          "mua thuc pham"),
             ("CGV",              "ve xem phim avengers"),
             ("EVN",              "hoa don tien dien"),
-            ("Tap Hoa",          ""),
+            ("Tap Hoa",          "mua do dung gia dinh"),
         ]
-        print(f"\n  {'Merchant':<20} {'Description':<25} → Category")
-        print(f"  {'─'*20} {'─'*25}   {'─'*20}")
-        for merchant, desc in samples:
-            cat = classifier.predict(merchant, desc)
-            print(f"  {merchant:<20} {desc:<25} → {cat}")
+
+        print("\n  Merchant               Mô tả                     → Danh mục")
+        print("  " + "-" * 65)
+
+        for merchant_name, description in sample_transactions:
+            predicted_category = classify_transaction(
+                merchant_name=merchant_name,
+                description=description
+            )
+            print("  " + merchant_name.ljust(22) + description.ljust(26) + " → " + predicted_category)
     else:
-        print("\n❌ Training thất bại.")
+        print("\n❌ Huấn luyện thất bại. Kiểm tra lại file CSV và thử lại.")
         sys.exit(1)
 
 

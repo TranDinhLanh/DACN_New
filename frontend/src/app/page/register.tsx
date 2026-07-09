@@ -11,8 +11,7 @@ export default function RegisterPage() {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  // reCAPTCHA is temporarily hidden/bypassed
-  const [captchaToken, setCaptchaToken] = useState<string | null>("mock_captcha_token");
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -37,8 +36,7 @@ export default function RegisterPage() {
     generateMathQuestion();
   }, []);
 
-  // reCAPTCHA loader disabled temporarily (commented out)
-  /*
+  // reCAPTCHA loader
   useEffect(() => {
     // Only load if not already loaded
     if (!document.getElementById("recaptcha-script")) {
@@ -93,19 +91,16 @@ export default function RegisterPage() {
       clearInterval(interval);
     };
   }, []);
-  */
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
-    // reCAPTCHA validation bypassed temporarily (commented out)
-    /*
+    // reCAPTCHA validation
     if (!captchaToken) {
       setError(recaptchaError ? "Vui lòng nhập đúng kết quả phép tính để xác thực" : "Vui lòng tích chọn xác thực reCAPTCHA");
       return;
     }
-    */
 
     setLoading(true);
 
@@ -220,7 +215,7 @@ export default function RegisterPage() {
                 </div>
               </div>
 
-              {/* reCAPTCHA Widget container (Temporarily commented out)
+              {/* reCAPTCHA Widget container */}
               {!recaptchaError ? (
                 <div className="space-y-2">
                   <div className="flex justify-center py-2">
@@ -275,7 +270,6 @@ export default function RegisterPage() {
                   )}
                 </div>
               )}
-              */}
 
               {/* Submit Button */}
               <button
