@@ -18,6 +18,7 @@ import {
   ArrowUpRight,
   RefreshCw,
   Calendar,
+  Shield,
 } from "lucide-react";
 import { api } from "@/lib/api";
 
@@ -630,6 +631,23 @@ function DashboardContent() {
     );
   };
 
+  const handleReportMiscategorized = (tx: any) => {
+    askConfirmation(
+      "Báo cáo phân loại sai",
+      `Bạn có chắc chắn muốn báo cáo giao dịch "${tx.description}" là phân loại sai? Admin sẽ xem xét và sửa.`,
+      () => {
+        api.reportMiscategorized(tx.id, `Giao dịch: ${tx.description}, Danh mục hiện tại: ${tx.category}`)
+          .then(() => {
+            showToast("Báo cáo thành công! Admin sẽ xem xét sớm.", "success");
+          })
+          .catch(err => {
+            console.error("Failed to report:", err);
+            showToast(err.message || "Báo cáo thất bại.", "error");
+          });
+      }
+    );
+  };
+
   const handleResetTransactions = () => {
     setTransactions(INITIAL_TRANSACTIONS);
   };
@@ -872,6 +890,22 @@ function DashboardContent() {
               <Lock className="h-4.5 w-4.5" />
               Đổi mật khẩu
             </button>
+
+            {user?.role === "admin" && (
+              <button
+                onClick={() => router.push("/admin")}
+                className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 ${activeTab === "admin"
+                  ? "bg-indigo-600/25 border border-indigo-500/30 text-white"
+                  : "text-slate-400 hover:bg-slate-900 hover:text-white"
+                  }`}
+              >
+                <div className="flex items-center gap-3">
+                  <Shield className="h-4.5 w-4.5" />
+                  Quản trị hệ thống
+                </div>
+                <span className="bg-gradient-to-r from-purple-500 to-pink-500 text-white text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">Admin</span>
+              </button>
+            )}
           </nav>
         </div>
 
@@ -912,6 +946,7 @@ function DashboardContent() {
             onStartEdit={handleStartEdit}
             onDeleteTransaction={handleDeleteTransaction}
             onNavigateToAdd={() => setActiveTab("add")}
+            onReportMiscategorized={handleReportMiscategorized}
           />
         )}
 

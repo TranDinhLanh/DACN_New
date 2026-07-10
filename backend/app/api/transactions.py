@@ -126,3 +126,37 @@ def delete_transaction(
     db.delete(db_transaction)
     db.commit()
     return None
+
+
+@router.put("/{transaction_id}/report-miscategorized")
+def report_miscategorized(
+    transaction_id: UUID,
+    note: str = "",
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Report a transaction as miscategorized (phân loại sai).
+    Only the transaction owner can report it.
+    """
+    db_transaction = db.query(Transaction).filter(
+        Transaction.id == transaction_id,
+        Transaction.user_id == current_user.id
+    ).first()
+    
+    if not db_transaction:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    
+    # Mark as miscategorized
+    db_transaction.is_miscategorized = True
+    db_transaction.miscategorization_note = note if note else f"Reported by user: {current_user.email}"
+    
+    db.commit()
+    db.refresh(db_transaction)
+    
+    return {
+        "id": str(db_transaction.id),
+        "is_miscategorized": db_transaction.is_miscategorized,
+        "note": db_transaction.miscategorization_note,
+        "message": "Giao dịch đã được báo cáo phân loại sai. Admin sẽ xem xét."
+    }

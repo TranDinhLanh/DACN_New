@@ -13,6 +13,7 @@ class User(Base):
     hashed_password = Column(String, nullable=False)
     full_name = Column(String, nullable=True)
     is_active = Column(Boolean, default=True)
+    role = Column(String, default="user")  # 'user' or 'admin'
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     reset_otp = Column(String, nullable=True)
     reset_otp_expires = Column(DateTime, nullable=True)
@@ -39,6 +40,8 @@ class Transaction(Base):
     merchant_name = Column(String, nullable=True)
     ocr_log_id = Column(UUID(as_uuid=True), ForeignKey("ocr_logs.id", ondelete="SET NULL"), nullable=True)
     event_id = Column(UUID(as_uuid=True), ForeignKey("events.id", ondelete="SET NULL"), nullable=True)
+    is_miscategorized = Column(Boolean, default=False)  # Đánh dấu phân loại sai
+    miscategorization_note = Column(String, nullable=True)  # Ghi chú lý do phân loại sai
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     # Relationships
@@ -56,6 +59,7 @@ class Budget(Base):
     limit_amount = Column(Float, nullable=False)
     spent_amount = Column(Float, default=0.0)
     period = Column(String, default="monthly")  # 'weekly', 'monthly'
+    is_custom = Column(Boolean, default=False)  # True if user-created, False if default
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     # Relationships

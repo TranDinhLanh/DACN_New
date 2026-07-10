@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { Clock, RefreshCw, Plus, Search, Edit, Trash2 } from "lucide-react";
+import { Clock, RefreshCw, Plus, Search, Edit, Trash2, AlertTriangle } from "lucide-react";
 
 interface HistoryTabProps {
   transactions: any[];
@@ -9,6 +9,7 @@ interface HistoryTabProps {
   onStartEdit: (tx: any) => void;
   onDeleteTransaction: (id: string) => void;
   onNavigateToAdd: () => void;
+  onReportMiscategorized?: (tx: any) => void;
 }
 
 export default function HistoryTab({
@@ -17,6 +18,7 @@ export default function HistoryTab({
   onStartEdit,
   onDeleteTransaction,
   onNavigateToAdd,
+  onReportMiscategorized,
 }: HistoryTabProps) {
   const [historySearch, setHistorySearch] = useState("");
   const [historyFilter, setHistoryFilter] = useState<"all" | "income" | "expense">("all");
@@ -155,6 +157,13 @@ export default function HistoryTab({
                     </button>
                     <button onClick={() => onDeleteTransaction(tx.id)} className="text-slate-500 hover:text-rose-500 p-1.5 rounded-lg hover:bg-rose-500/10 transition-all" title="Xóa">
                       <Trash2 className="h-4 w-4" />
+                    </button>
+                    <button 
+                      onClick={() => onReportMiscategorized?.(tx)} 
+                      className="text-slate-500 hover:text-amber-500 p-1.5 rounded-lg hover:bg-amber-500/10 transition-all" 
+                      title="Báo cáo phân loại sai"
+                    >
+                      <AlertTriangle className="h-4 w-4" />
                     </button>
                   </td>
                 </tr>

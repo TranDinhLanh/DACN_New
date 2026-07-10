@@ -161,6 +161,14 @@ export const api = {
     });
   },
 
+  reportMiscategorized(txId: string, note: string = "") {
+    return fetchAPI(`/transactions/${txId}/report-miscategorized`, {
+      method: "PUT",
+      body: JSON.stringify({ note }),
+      requiresAuth: true,
+    });
+  },
+
   // --- BUDGETS API ---
   getBudgets() {
     return fetchAPI("/budgets/", {
@@ -184,6 +192,18 @@ export const api = {
   deleteBudget(budgetId: string) {
     return fetchAPI(`/budgets/${budgetId}`, {
       method: "DELETE",
+      requiresAuth: true,
+    });
+  },
+
+  updateBudget(budgetId: string, budgetData: {
+    category: string;
+    limit_amount: number;
+    period: string;
+  }) {
+    return fetchAPI(`/budgets/${budgetId}`, {
+      method: "PUT",
+      body: JSON.stringify(budgetData),
       requiresAuth: true,
     });
   },
@@ -293,6 +313,89 @@ export const api = {
 
   deleteRecurringTemplate(id: string) {
     return fetchAPI(`/recurring-templates/${id}`, {
+      method: "DELETE",
+      requiresAuth: true,
+    });
+  },
+
+  // --- ADMIN API ---
+  getAdminUsers() {
+    return fetchAPI("/admin/users", {
+      method: "GET",
+      requiresAuth: true,
+    });
+  },
+
+  updateUserRole(userId: string, newRole: string) {
+    return fetchAPI(`/admin/users/${userId}/role`, {
+      method: "PUT",
+      body: JSON.stringify({ new_role: newRole }),
+      requiresAuth: true,
+    });
+  },
+
+  deleteAdminUser(userId: string) {
+    return fetchAPI(`/admin/users/${userId}`, {
+      method: "DELETE",
+      requiresAuth: true,
+    });
+  },
+
+  // --- ADMIN EVENTS API ---
+  getAdminEvents() {
+    return fetchAPI("/admin/events/all", {
+      method: "GET",
+      requiresAuth: true,
+    });
+  },
+
+  deleteAdminEvent(eventId: string) {
+    return fetchAPI(`/admin/events/${eventId}`, {
+      method: "DELETE",
+      requiresAuth: true,
+    });
+  },
+
+  // --- ADMIN RECURRING TEMPLATES API ---
+  getAdminRecurringTemplates() {
+    return fetchAPI("/admin/recurring-templates/all", {
+      method: "GET",
+      requiresAuth: true,
+    });
+  },
+
+  deleteAdminRecurringTemplate(templateId: string) {
+    return fetchAPI(`/admin/recurring-templates/${templateId}`, {
+      method: "DELETE",
+      requiresAuth: true,
+    });
+  },
+
+  toggleAdminRecurringTemplate(templateId: string) {
+    return fetchAPI(`/admin/recurring-templates/${templateId}/toggle`, {
+      method: "PUT",
+      requiresAuth: true,
+    });
+  },
+
+  // --- ADMIN MISCATEGORIZED TRANSACTIONS API ---
+  getAdminMiscategorizedTransactions() {
+    return fetchAPI("/admin/miscategorized-transactions/all", {
+      method: "GET",
+      requiresAuth: true,
+    });
+  },
+
+  fixMiscategorizedTransaction(transactionId: string, newCategory: string) {
+    return fetchAPI(`/admin/miscategorized-transactions/${transactionId}/fix`, {
+      method: "PUT",
+      body: JSON.stringify({ new_category: newCategory }),
+      requiresAuth: true,
+    });
+  },
+
+  deleteMiscategorizedTransaction(transactionId: string) {
+    return fetchAPI(`/admin/miscategorized-transactions/${transactionId}`, {
       method: "DELETE",
       requiresAuth: true,
     });
