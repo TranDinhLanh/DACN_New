@@ -11,45 +11,27 @@ export default function RegisterPage() {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
   const recaptchaRef = useRef<HTMLDivElement>(null);
 
-  // Fallback CAPTCHA states when Google reCAPTCHA fails/invalid key
-  const [recaptchaError, setRecaptchaError] = useState(false);
-  const [fallbackAnswer, setFallbackAnswer] = useState("");
-  const [mathQuestion, setMathQuestion] = useState({ num1: 0, num2: 0, result: 0 });
+  // reCAPTCHA initialization
 
-  const generateMathQuestion = () => {
-    const num1 = Math.floor(Math.random() * 10) + 1;
-    const num2 = Math.floor(Math.random() * 10) + 1;
-    setMathQuestion({
-      num1,
-      num2,
-      result: num1 + num2
-    });
-  };
-
-  useEffect(() => {
-    generateMathQuestion();
-  }, []);
-
-  // reCAPTCHA loader
   useEffect(() => {
     // Only load if not already loaded
     if (!document.getElementById("recaptcha-script")) {
       const script = document.createElement("script");
       script.id = "recaptcha-script";
-      script.src = "https://www.google.com/recaptcha/api.js?render=explicit";
       script.async = true;
       script.defer = true;
-      document.body.appendChild(script);
-
       script.onload = () => {
         initRecaptcha();
       };
+      script.src = "https://www.google.com/recaptcha/api.js?render=explicit";
+      document.body.appendChild(script);
     } else {
       initRecaptcha();
     }
@@ -59,7 +41,7 @@ export default function RegisterPage() {
         try {
           // Render explicit Captcha widget
           (window as any).grecaptcha.render(recaptchaRef.current, {
-            sitekey: process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY || "6LeIxAcTAAAAAJcZVRqyhH71UMIEGNQ_MXjiZKhI", // Google developer test key
+            sitekey: process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY || "6LfFl0gtAAAAALWLUQ9mSFKi2JJgwNCK9NvKiugW",
             callback: (token: string) => {
               setCaptchaToken(token);
               setError(null);
@@ -68,12 +50,10 @@ export default function RegisterPage() {
               setCaptchaToken(null);
             },
             "error-callback": () => {
-              console.warn("reCAPTCHA failed or invalid site key. Switching to backup math verification.");
-              setRecaptchaError(true);
+              console.error("reCAPTCHA failed to load or invalid site key.");
             }
           });
         } catch (e) {
-          // Widget might already be rendered
           console.log("reCAPTCHA already rendered", e);
         }
       }
@@ -96,9 +76,14 @@ export default function RegisterPage() {
     e.preventDefault();
     setError(null);
 
+    if (password !== confirmPassword) {
+      setError("Mật khẩu và xác nhận mật khẩu không khớp.");
+      return;
+    }
+
     // reCAPTCHA validation
     if (!captchaToken) {
-      setError(recaptchaError ? "Vui lòng nhập đúng kết quả phép tính để xác thực" : "Vui lòng tích chọn xác thực reCAPTCHA");
+      setError("Vui lòng tích chọn xác thực reCAPTCHA");
       return;
     }
 
@@ -215,61 +200,31 @@ export default function RegisterPage() {
                 </div>
               </div>
 
+              {/* Confirm Password Field */}
+              <div className="space-y-1">
+                <label className="text-xs text-slate-400 font-semibold block">Xác nhận mật khẩu</label>
+                <div className="relative">
+                  <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-500">
+                    <Lock className="h-4.5 w-4.5" />
+                  </span>
+                  <input
+                    type="password"
+                    placeholder="••••••••"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    className="w-full bg-slate-900/60 border border-white/5 rounded-xl pl-11 pr-4 py-3.5 text-sm focus:outline-none focus:border-indigo-500/50 text-white placeholder-slate-500 transition-colors"
+                    minLength={6}
+                    required
+                  />
+                </div>
+              </div>
+
               {/* reCAPTCHA Widget container */}
-              {!recaptchaError ? (
-                <div className="space-y-2">
-                  <div className="flex justify-center py-2">
-                    <div ref={recaptchaRef} id="recaptcha-container"></div>
-                  </div>
-                  <div className="text-center">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setRecaptchaError(true);
-                        generateMathQuestion();
-                      }}
-                      className="text-[10px] text-slate-500 hover:text-indigo-400 transition-colors underline"
-                    >
-                      Không hiển thị được reCAPTCHA? Nhấp vào đây để xác thực phụ
-                    </button>
-                  </div>
+              <div className="space-y-2">
+                <div className="flex justify-center py-2">
+                  <div ref={recaptchaRef} id="recaptcha-container"></div>
                 </div>
-              ) : (
-                <div className="p-4 bg-slate-950/40 border border-white/5 rounded-xl space-y-3">
-                  <div className="text-xs text-amber-400 font-semibold flex items-center gap-1.5">
-                    <span>⚠️</span> Hệ thống xác thực reCAPTCHA bị lỗi.
-                  </div>
-                  <p className="text-[11px] text-slate-400">
-                    Vui lòng tính nhẩm kết quả dưới đây để xác thực:
-                  </p>
-                  <div className="flex items-center gap-3">
-                    <div className="bg-slate-900 border border-white/5 rounded-xl px-4 py-2 text-sm font-bold text-indigo-300 tracking-wide select-none">
-                      {mathQuestion.num1} + {mathQuestion.num2} = ?
-                    </div>
-                    <input
-                      type="number"
-                      placeholder="Kết quả"
-                      value={fallbackAnswer}
-                      onChange={(e) => {
-                        setFallbackAnswer(e.target.value);
-                        if (parseInt(e.target.value) === mathQuestion.result) {
-                          setCaptchaToken("mock_captcha_token");
-                          setError(null);
-                        } else {
-                          setCaptchaToken(null);
-                        }
-                      }}
-                      className="flex-1 bg-slate-950/60 border border-white/5 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-indigo-500/50 text-white placeholder-slate-600 transition-colors"
-                      required
-                    />
-                  </div>
-                  {captchaToken === "mock_captcha_token" && (
-                    <div className="text-[10px] text-emerald-400 font-medium flex items-center gap-1">
-                      ✓ Xác thực phụ thành công! Bạn có thể nhấn Đăng ký.
-                    </div>
-                  )}
-                </div>
-              )}
+              </div>
 
               {/* Submit Button */}
               <button
