@@ -109,3 +109,43 @@ def delete_budget(
     db.delete(db_budget)
     db.commit()
     return None
+
+
+@router.put("/{budget_id}", response_model=BudgetResponse)
+def update_budget(
+    budget_id: UUID,
+    budget_in: BudgetCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Update a budget.
+    """
+    db_budget = db.query(Budget).filter(
+        Budget.id == budget_id,
+        Budget.user_id == current_user.id
+    ).first()
+    
+    if not db_budget:
+        raise HTTPException(status_code=404, detail="Budget not found")
+    
+    db_budget.category = budget_in.category
+    db_budget.limit_amount = budget_in.limit_amount
+    db_budget.period = budget_in.period
+    
+    db.commit()
+    db.refresh(db_budget)
+    
+    # Re-calculate spent amount
+    today = date.today()
+    start_of_month = date(today.year, today.month, 1)
+    total_spent = db.query(func.sum(Transaction.amount)).filter(
+        Transaction.user_id == current_user.id,
+        Transaction.category == db_budget.category,
+        Transaction.type == "expense",
+        Transaction.transaction_date >= start_of_month
+    ).scalar()
+    db_budget.spent_amount = float(total_spent) if total_spent else 0.0
+    db.commit()
+    
+    return db_budget

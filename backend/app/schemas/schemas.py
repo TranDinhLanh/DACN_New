@@ -15,7 +15,18 @@ class UserCreate(UserBase):
 class UserResponse(UserBase):
     id: UUID
     is_active: bool
+    role: str
     created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class UserDetailResponse(UserResponse):
+    """Thông tin chi tiết user với thống kê giao dịch"""
+    total_transactions: int = 0
+    total_spent: float = 0.0
+    total_income: float = 0.0
+    transaction_count: int = 0
 
     class Config:
         from_attributes = True
