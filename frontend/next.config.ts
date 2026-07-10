@@ -1,6 +1,6 @@
 import type { NextConfig } from "next";
 
-const nextConfig: NextConfig = {
+const nextConfig = {
   typescript: {
     // Bỏ qua kiểm tra lỗi kiểu dữ liệu TypeScript để rút ngắn thời gian build
     ignoreBuildErrors: true,
