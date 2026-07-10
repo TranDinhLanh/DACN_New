@@ -11,11 +11,22 @@ from app.core.config import settings
 from app.core.database import engine, Base
 from app.api import auth, transactions, budgets, ocr, forecast, chat, recurring, events, admin
 
+from sqlalchemy import text
+
 # Attempt database table initialization automatically on startup
 try:
     Base.metadata.create_all(bind=engine)
+    # Ensure indexes exist on user_id columns for maximum query performance (Supabase optimization)
+    with engine.connect() as conn:
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_transactions_user_id ON transactions (user_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_budgets_user_id ON budgets (user_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_ocr_logs_user_id ON ocr_logs (user_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_forecasts_user_id ON forecasts (user_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_recurring_templates_user_id ON recurring_templates (user_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_events_user_id ON events (user_id)"))
+        conn.commit()
 except Exception as e:
-    print(f"Warning: Could not auto-create database tables (Database might not be running yet): {str(e)}")
+    print(f"Warning: Could not auto-create database tables or indexes: {str(e)}")
 
 # Ensure local directories for file uploads exist
 os.makedirs("static/uploads", exist_ok=True)

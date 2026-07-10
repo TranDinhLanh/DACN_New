@@ -19,7 +19,14 @@ if url.drivername in {"postgresql", "postgresql+psycopg2", "postgresql+psycopg"}
     connect_args["connect_timeout"] = 10
 
 logger.info("Connecting to primary cloud database (Supabase)...")
-engine = create_engine(db_url, pool_pre_ping=True, connect_args=connect_args)
+engine = create_engine(
+    db_url,
+    pool_size=20,
+    max_overflow=10,
+    pool_recycle=1800,
+    pool_pre_ping=True,
+    connect_args=connect_args
+)
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 

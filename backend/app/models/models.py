@@ -31,7 +31,7 @@ class Transaction(Base):
     __tablename__ = "transactions"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     amount = Column(Float, nullable=False)
     type = Column(String, nullable=False)  # 'income' or 'expense'
     category = Column(String, nullable=False, default="Other")
@@ -54,7 +54,7 @@ class Budget(Base):
     __tablename__ = "budgets"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     category = Column(String, nullable=False)
     limit_amount = Column(Float, nullable=False)
     spent_amount = Column(Float, default=0.0)
@@ -70,7 +70,7 @@ class OCRLog(Base):
     __tablename__ = "ocr_logs"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     image_url = Column(String, nullable=False)
     extracted_raw_text = Column(String, nullable=True)
     status = Column(String, default="pending")  # 'pending', 'success', 'failed'
@@ -85,7 +85,7 @@ class Forecast(Base):
     __tablename__ = "forecasts"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     forecast_date = Column(Date, nullable=False)
     predicted_amount = Column(Float, nullable=False)
     category = Column(String, nullable=False, default="Total")
@@ -99,7 +99,7 @@ class RecurringTemplate(Base):
     __tablename__ = "recurring_templates"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     amount = Column(Float, nullable=False)
     type = Column(String, nullable=False)          # 'income' or 'expense'
     category = Column(String, nullable=False)
@@ -121,7 +121,7 @@ class Event(Base):
     __tablename__ = "events"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     name = Column(String, nullable=False)
     budget_limit = Column(Float, default=0.0)
     start_date = Column(Date, nullable=True)
