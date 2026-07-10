@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import { AlertTriangle, RefreshCw, Sparkles, UploadCloud, FileText } from "lucide-react";
-import { api } from "@/lib/api";
+import { api, BACKEND_BASE_URL } from "@/lib/api";
 
 interface OcrTabProps {
   onSaveSuccess: (savedTx: any) => void;
@@ -55,17 +55,7 @@ export default function OcrTab({ onSaveSuccess, onCancel }: OcrTabProps) {
     formData.append("file", file);
 
     try {
-      const response = await fetch("http://localhost:8001/api/v1/ocr/upload", {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const errDetail = await response.json();
-        throw new Error(errDetail.detail || "Không thể tải lên và xử lý hóa đơn.");
-      }
-
-      const parsedData = await response.json();
+      const parsedData = await api.uploadOcr(formData);
       setOcrExtractedData(parsedData);
       setOcrSuccess(true);
 
@@ -244,7 +234,7 @@ export default function OcrTab({ onSaveSuccess, onCancel }: OcrTabProps) {
                   {ocrPreviewUrl ? (
                     <img src={ocrPreviewUrl} alt="Scanned Bill Receipt" className="h-full w-full object-contain transition-transform duration-300 hover:scale-105" />
                   ) : ocrExtractedData.image_url ? (
-                    <img src={`http://localhost:8001${ocrExtractedData.image_url}`} alt="Scanned Bill Receipt" className="h-full w-full object-contain transition-transform duration-300 hover:scale-105" />
+                    <img src={`${BACKEND_BASE_URL}${ocrExtractedData.image_url}`} alt="Scanned Bill Receipt" className="h-full w-full object-contain transition-transform duration-300 hover:scale-105" />
                   ) : (
                     <div className="text-slate-500 text-xs flex flex-col items-center gap-2">
                       <AlertTriangle className="h-6 w-6 text-amber-500" />

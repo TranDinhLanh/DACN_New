@@ -30,16 +30,20 @@ app = FastAPI(
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # CORS configuration
-# Allows communication from local Next.js frontend server (usually http://localhost:3000)
 origins = [
     "http://localhost:3000",
     "https://localhost:3000",
     "http://127.0.0.1:3000",
+    "http://localhost:3001",
+    "http://127.0.0.1:3001",
+    "http://160.250.181.63:3001",
+    "http://160.250.181.63:3000",
 ]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
+    allow_origin_regex=r"https?://.*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

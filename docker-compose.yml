@@ -14,5 +14,42 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
+  backend:
+    container_name: pfm-backend
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8000" # Map cổng 8001 của VPS vào cổng 8000 của Container Backend
+    volumes:
+      - ./backend/static:/app/static                      # Mount thư mục static để lưu ảnh hóa đơn không bị mất khi restart container
+      - ./backend/app/services/models:/app/app/services/models  # Mount thư mục models để lưu trữ model ML (.pkl) sau khi huấn luyện lại
+    environment:
+      # Sử dụng database Supabase Cloud như cấu hình trong file .env
+      - DATABASE_URL=postgresql://postgres.mpdjazdqkpayinynlanf:9uhb1dzY9LVmEB1v@aws-1-ap-south-1.pooler.supabase.com:5432/postgres
+      - GEMINI_API_KEY=AIzaSyC116V8I2cvE85aeB5fVku0fa2RmhzXwl8
+      - SMTP_HOST=smtp.gmail.com
+      - SMTP_PORT=587
+      - SMTP_USER=22130245@st.hcmuaf.edu.vn
+      - SMTP_PASSWORD=xubt ppsx zjqx bkgy
+      - SMTP_FROM_EMAIL=22130245@st.hcmuaf.edu.vn
+      - SMTP_TLS=True
+      - SMTP_SSL=False
+      - RECAPTCHA_SECRET_KEY=6LfFl0gtAAAAAMBW3zBTjb673MWsuGVGGzb-mLST
+    restart: always
+
+  frontend:
+    container_name: pfm-frontend
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # Cấu hình biến môi trường tại thời điểm BUILD (Build-time arguments)
+        - NEXT_PUBLIC_API_URL=http://160.250.181.63:8001
+        - NEXT_PUBLIC_RECAPTCHA_SITE_KEY=6LfFl0gtAAAALWLUQ9mSFKi2JJgwNCK9NvKiugW
+    ports:
+      - "3001:3000" # Map cổng 3001 của VPS vào cổng 3000 của Container Frontend
+    restart: always
+
 volumes:
   postgres_data:
